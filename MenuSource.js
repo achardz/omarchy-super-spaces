@@ -83,6 +83,9 @@ function entries(items) {
       // list entries the way Omarchy's own menu does.
       order: out.length,
       label: String(item.label),
+      // Ranking reads these on every keystroke; worked out once here.
+      labelLower: String(item.label).toLowerCase(),
+      depth: id.split(".").length,
       path: labels.join(" › "),
       icon: String(item.icon || ""),
       iconFont: String(item.iconFont || ""),

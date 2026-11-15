@@ -1,45 +1,66 @@
 #!/bin/bash
 # Lists AI agent sessions logged on this machine for Super Spaces search, one
 # per line, newest first:  agent<TAB>id<TAB>title<TAB>cwd<TAB>epoch-seconds
-# Reads only the first few KB of each log. Supported: omp (oh-my-pi); Claude
+# Reads only the first lines of each log. Supported: omp (oh-my-pi); Claude
 # Code and Codex CLI are read when their log folders exist.
+#
+# Runs every time the search opens, so each agent costs three processes in
+# total (stat, awk, jq) however many logs there are, rather than three per log.
 set -uo pipefail
+shopt -s nullglob
 
-clean() { tr '\t\n\r' '   ' | cut -c1-140; }
+# Prints every file's mtime ("\x1f<mtime>\t<path>"), then its first $1 lines
+# after a "\x1e<path>" marker. awk's nextfile stops reading each log early.
+collect() {
+  local lines=$1; shift
+  (($# > 0)) || return 0
+  stat -c $'\x1f%Y\t%n' -- "$@"
+  # Paths are absolute, so none can be mistaken for an option; awk takes a
+  # "--" after the program as a file name.
+  awk -v n="$lines" 'FNR == 1 { print "\036" FILENAME } FNR > n { nextfile } { print }' "$@"
+}
+
+# Groups collect's output into $file, $mtime and $rows (the parsed JSON lines)
+# for the per-agent filter that follows.
+readonly GROUP='
+  reduce inputs as $l ({m: {}, f: {}, cur: null};
+    if ($l | startswith("\u001f")) then
+      ($l[1:] | split("\t")) as $p | .m[$p[1:] | join("\t")] = $p[0]
+    elif ($l | startswith("\u001e")) then
+      .cur = $l[1:] | .f[.cur] = []
+    else
+      (($l | fromjson?) // null) as $o | if $o != null then .f[.cur] += [$o] else . end
+    end)
+  | .m as $m | .f | to_entries[]
+  | .key as $file | .value as $rows | ($m[$file] // "0") as $mtime'
 
 {
-  # omp: ~/.omp/agent/sessions/<dir>/<time>_<id>.jsonl; first lines carry
+  # omp: ~/.omp/agent/sessions/<dir>/<time>_<id>.jsonl; the first lines carry
   # {"type":"title"} and {"type":"session","id","cwd"}. Subagent logs live in
   # per-session subfolders and are skipped.
-  for f in "$HOME"/.omp/agent/sessions/*/*.jsonl; do
-    [[ -f $f ]] || continue
-    head -n 4 "$f" | jq -Rrs --arg m "$(stat -c %Y "$f")" '
-      [split("\n")[] | fromjson? ] |
-      (map(select(.type=="title"))[0].title // "") as $t
-      | (map(select(.type=="session"))[0] // {}) as $s
-      | select($s.id) | ["omp", $s.id, ($t // ""), ($s.cwd // ""), $m] | @tsv' 2>/dev/null
-  done
+  collect 4 "$HOME"/.omp/agent/sessions/*/*.jsonl | jq -Rrn "$GROUP"'
+    | ($rows | map(select(.type == "title"))[0].title // "") as $t
+    | ($rows | map(select(.type == "session"))[0] // {}) as $s
+    | select($s.id) | ["omp", $s.id, $t, ($s.cwd // ""), $mtime] | @tsv' 2>/dev/null
 
   # Claude Code: ~/.claude/projects/<project>/<session-id>.jsonl
-  for f in "$HOME"/.claude/projects/*/*.jsonl; do
-    [[ -f $f ]] || continue
-    id=$(basename "$f" .jsonl)
-    head -n 30 "$f" | jq -Rrs --arg id "$id" --arg m "$(stat -c %Y "$f")" '
-      [split("\n")[] | fromjson? ] |
-      (map(select(.type=="summary"))[0].summary
-        // (map(select(.type=="user"))[0].message.content | if type=="string" then . else (.[0].text // "") end)
+  collect 30 "$HOME"/.claude/projects/*/*.jsonl | jq -Rrn "$GROUP"'
+    | ($file | split("/")[-1] | rtrimstr(".jsonl")) as $id
+    | ($rows | map(select(.type == "summary"))[0].summary
+        // ($rows | map(select(.type == "user"))[0].message.content
+              | if type == "string" then . else (.[0].text // "") end)
         // "") as $t
-      | (map(select(.cwd))[0].cwd // "") as $c
-      | ["claude", $id, $t, $c, $m] | @tsv' 2>/dev/null
-  done
+    | ($rows | map(select(.cwd))[0].cwd // "") as $c
+    | ["claude", $id, $t, $c, $mtime] | @tsv' 2>/dev/null
 
   # Codex CLI: ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl with session_meta.
-  while IFS= read -r f; do
-    head -n 30 "$f" | jq -Rrs --arg m "$(stat -c %Y "$f")" '
-      [split("\n")[] | fromjson? ] |
-      (map(select(.type=="session_meta"))[0].payload // {}) as $p
-      | select($p.id)
-      | (map(select(.type=="response_item" and .payload.role=="user"))[0].payload.content[0].text // "") as $t
-      | ["codex", $p.id, $t, ($p.cwd // ""), $m] | @tsv' 2>/dev/null
-  done < <(find "$HOME/.codex/sessions" -name 'rollout-*.jsonl' 2>/dev/null)
+  codex=()
+  if [[ -d $HOME/.codex/sessions ]]; then
+    mapfile -t codex < <(find "$HOME/.codex/sessions" -name 'rollout-*.jsonl' 2>/dev/null)
+  fi
+  collect 30 "${codex[@]}" | jq -Rrn "$GROUP"'
+    | ($rows | map(select(.type == "session_meta"))[0].payload // {}) as $p
+    | select($p.id)
+    | ($rows | map(select(.type == "response_item" and .payload.role == "user"))[0].payload.content[0].text // "") as $t
+    | ["codex", $p.id, $t, ($p.cwd // ""), $mtime] | @tsv' 2>/dev/null
 } | awk -F'\t' 'BEGIN{OFS="\t"} { gsub(/[\r\n]/," ",$3); $3=substr($3,1,140); print }' | sort -t$'\t' -k5,5nr

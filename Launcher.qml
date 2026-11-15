@@ -76,7 +76,7 @@ Item {
   // Label starting with a word beats label containing it beats a match only
   // in the path, aliases or id; shallower entries win ties.
   function menuScore(entry, words) {
-    var label = entry.label.toLowerCase()
+    var label = entry.labelLower
     var score = 0
     for (var i = 0; i < words.length; i++) {
       if (entry.search.indexOf(words[i]) < 0) return -1
@@ -84,15 +84,18 @@ Item {
       else if (label.indexOf(words[i]) >= 0) score += 20
       else score += 10
     }
-    return score - entry.id.split(".").length
+    return score - entry.depth
   }
 
   function menuRows(rest, limit) {
     var words = root.terms(rest)
     var scored = []
-    for (var i = 0; i < root.menuEntries.length; i++) {
-      var e = root.menuEntries[i]
-      var s = words.length > 0 ? root.menuScore(e, words) : -e.id.split(".").length
+    // One property read; reading root.menuEntries inside the loop goes back
+    // through the QML property each time.
+    var entries = root.menuEntries
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i]
+      var s = words.length > 0 ? root.menuScore(e, words) : -e.depth
       if (s >= (words.length > 0 ? 0 : -1)) scored.push({ e: e, s: s })
     }
     // Ties keep Omarchy's own menu order (its file order).
@@ -644,10 +647,22 @@ Item {
 
   // ---- lifecycle -------------------------------------------------------
 
+  property bool iconsScanned: false
+
   function open(payloadJson) {
     Hyprland.refreshToplevels()
+    // Icons can change between opens (an app installed); look them up afresh.
+    root.iconCache = ({})
     Hyprland.refreshWorkspaces()
-    if (root.appLibrary) root.appLibrary.refreshIcons()
+    // Omarchy rescans icons by itself whenever installed apps change; the
+    // scan (find over ~7k icon files, parsed line by line in JS, then every
+    // icon binding re-evaluated) only needs a nudge once, for icons placed
+    // before the shell started watching. Running it on every open cost more
+    // than the whole search.
+    if (root.appLibrary && !root.iconsScanned) {
+      root.appLibrary.refreshIcons()
+      root.iconsScanned = true
+    }
     usageFile.reload()
     // A file created after the shell started has no watch yet; reading it on
     // each open picks it up (and edits) without a shell restart.
@@ -713,10 +728,19 @@ Item {
     return parts[parts.length - 1]
   }
 
+  // Window class -> icon. heuristicLookup scans every desktop entry, so it
+  // runs once per class while the search is open, not per window per key.
+  property var iconCache: ({})
+
   function appIconFor(cls) {
-    var entry = cls ? DesktopEntries.heuristicLookup(cls) : null
-    if (!entry || !entry.icon) return ""
-    return root.appLibrary ? root.appLibrary.iconSource(entry.icon) : Quickshell.iconPath(entry.icon, true)
+    if (!cls) return ""
+    var hit = root.iconCache[cls]
+    if (hit !== undefined) return hit
+    var entry = DesktopEntries.heuristicLookup(cls)
+    var icon = !entry || !entry.icon ? ""
+      : root.appLibrary ? root.appLibrary.iconSource(entry.icon) : Quickshell.iconPath(entry.icon, true)
+    root.iconCache[cls] = icon
+    return icon
   }
 
   function windowRows(words) {
@@ -741,16 +765,31 @@ Item {
 
   // Address of an open window belonging to this app, matched on the desktop
   // entry's StartupWMClass or id against the window class ("" when none).
+  // The windows are indexed once per search (class, and its last dotted part,
+  // -> address) instead of rescanned and resplit for every app row.
+  property var windowIndex: null
+
   function runningWindowFor(entry) {
+    if (root.windowIndex === null) {
+      var index = ({})
+      var values = Hyprland.toplevels.values || []
+      for (var i = values.length - 1; i >= 0; i--) {
+        var cls = String((values[i].lastIpcObject || {}).class || "").toLowerCase()
+        if (!cls) continue
+        var address = String(values[i].address || "")
+        // Walking backwards and writing over earlier hits keeps the first
+        // window in Hyprland's order, as the old scan returned.
+        index[cls] = address
+        index["." + cls.split(".").pop()] = address
+      }
+      root.windowIndex = index
+    }
     var id = String(entry.id || "").toLowerCase()
     var keys = [String(entry.startupClass || "").toLowerCase(), id, id.split(".").pop()]
-      .filter(function(k) { return k.length > 0 })
-    var values = Hyprland.toplevels.values || []
-    for (var i = 0; i < values.length; i++) {
-      var ipc = values[i].lastIpcObject || {}
-      var cls = String(ipc.class || "").toLowerCase()
-      if (!cls) continue
-      if (keys.indexOf(cls) !== -1 || keys.indexOf(cls.split(".").pop()) !== -1) return String(values[i].address || "")
+    for (var k = 0; k < keys.length; k++) {
+      if (!keys[k]) continue
+      var hit = root.windowIndex[keys[k]] || root.windowIndex["." + keys[k]]
+      if (hit) return hit
     }
     return ""
   }
@@ -823,9 +862,11 @@ Item {
     if (!root.appLibrary) return []
     var out = []
     if (!String(query).trim()) {
-      var ids = Object.keys(root.usage).sort(function(a, b) {
-        return root.usageBoost(b) - root.usageBoost(a)
-      })
+      // Each app's boost (a log and a clock read) once, not per comparison.
+      var boosts = ({})
+      var ids = Object.keys(root.usage)
+      for (var u = 0; u < ids.length; u++) boosts[ids[u]] = root.usageBoost(ids[u])
+      ids.sort(function(a, b) { return boosts[b] - boosts[a] })
       for (var r = 0; r < ids.length && out.length < root.maxRecentApps; r++) {
         var known = DesktopEntries.byId(ids[r])
         if (known && !known.noDisplay) out.push(root.appRow(known, true))
@@ -849,6 +890,7 @@ Item {
     var query = root.filterText
     var words = root.terms(query)
     var rows = []
+    root.windowIndex = null
 
     // Ctrl+M on a window: the list becomes target workspaces.
     if (root.movingWindow) {
@@ -857,9 +899,7 @@ Item {
       folderSearch.running = false
       fileSearch.running = false
       rows = root.moveRows(query)
-      displayModel.clear()
-      for (var mv = 0; mv < rows.length; mv++) displayModel.append(Object.assign({ window: "" }, rows[mv]))
-      root.clampSelection()
+      root.showRows(rows)
       return
     }
 
@@ -883,9 +923,7 @@ Item {
         : clipRest !== null ? root.clipRows(clipRest)
         : agentRest !== null ? root.agentRows(agentRest, root.maxAgents)
         : root.askRows(askRest)
-      displayModel.clear()
-      for (var k = 0; k < rows.length; k++) displayModel.append(Object.assign({ window: "" }, rows[k]))
-      root.clampSelection()
+      root.showRows(rows)
       return
     }
 
@@ -923,11 +961,24 @@ Item {
       if (root.on("recent")) rows = rows.concat(root.recentFileRows(words, root.maxRecentFiles))
     }
 
-    displayModel.clear()
-    // Every row carries the same roles; only running-app rows fill `window`.
-    for (var i = 0; i < rows.length; i++) displayModel.append(Object.assign({ window: "" }, rows[i]))
+    root.showRows(rows)
+    root.scheduleFiles(query, calc !== null)
+  }
+
+  // Writes rows into the list in place. Clearing and refilling the model made
+  // the list destroy and rebuild every row (a rectangle, an icon image and
+  // three texts each) on each keystroke; overwriting keeps those rows alive
+  // and only changes their text and icon. Every row carries the same roles;
+  // only running-app rows fill `window`.
+  function showRows(rows) {
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]
+      if (r.window === undefined) r.window = ""
+      if (i < displayModel.count) displayModel.set(i, r)
+      else displayModel.append(r)
+    }
+    if (displayModel.count > rows.length) displayModel.remove(rows.length, displayModel.count - rows.length)
     root.clampSelection()
-    root.scheduleFiles(query)
   }
 
   // ---- files, on demand ------------------------------------------------
@@ -935,13 +986,15 @@ Item {
   property int fileGeneration: 0
   property string pendingFileQuery: ""
 
-  function scheduleFiles(query) {
+  function scheduleFiles(query, isMath) {
     root.fileGeneration++
     folderSearch.running = false
     fileSearch.running = false
     var q = String(query || "").trim()
     if (!root.on("files")) return
-    if (q.length < 2 || Calc.evaluate(q) !== null || /^\d{1,2}$/.test(q)) return
+    if (q.length < 2 || isMath || /^\d{1,2}$/.test(q)) return
+    // With the calculator off, maths still shouldn't start a file search.
+    if (!root.on("calc") && Calc.evaluate(q) !== null) return
     root.pendingFileQuery = q
     fileDebounce.restart()
   }
