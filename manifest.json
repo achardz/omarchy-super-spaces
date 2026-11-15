@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "anzlaptop.super-spaces",
+  "name": "Super Spaces",
+  "version": "1.1.0",
+  "author": "anz",
+  "license": "MIT",
+  "description": "Workspace indicators where workspaces past 9 fold behind a +/- toggle, like the tray drawer, and show their full number",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Workspaces.qml"
+  },
+  "barWidget": {
+    "displayName": "Super Spaces",
+    "description": "Workspaces 1-9, with 10+ folded behind +/-",
+    "category": "Compositor",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.workspaces"
+  }
+}
