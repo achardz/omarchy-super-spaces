@@ -647,21 +647,26 @@ Item {
 
   // ---- lifecycle -------------------------------------------------------
 
-  property bool iconsScanned: false
+  property real iconsScannedAt: 0
+  // False while an icon rescan this open may still replace icon paths.
+  property bool iconCacheOn: true
 
   function open(payloadJson) {
     Hyprland.refreshToplevels()
     // Icons can change between opens (an app installed); look them up afresh.
     root.iconCache = ({})
+    root.iconCacheOn = true
     Hyprland.refreshWorkspaces()
     // Omarchy rescans icons by itself whenever installed apps change; the
     // scan (find over ~7k icon files, parsed line by line in JS, then every
-    // icon binding re-evaluated) only needs a nudge once, for icons placed
-    // before the shell started watching. Running it on every open cost more
-    // than the whole search.
-    if (root.appLibrary && !root.iconsScanned) {
+    // icon binding re-evaluated) is only a backstop for icons that land
+    // without an app change, so it runs at most every 5 minutes instead of
+    // on every open. While it runs, window icons aren't cached, so this open
+    // can't keep paths from before the scan.
+    if (root.appLibrary && Date.now() - root.iconsScannedAt > 5 * 60 * 1000) {
       root.appLibrary.refreshIcons()
-      root.iconsScanned = true
+      root.iconsScannedAt = Date.now()
+      root.iconCacheOn = false
     }
     usageFile.reload()
     // A file created after the shell started has no watch yet; reading it on
@@ -739,7 +744,7 @@ Item {
     var entry = DesktopEntries.heuristicLookup(cls)
     var icon = !entry || !entry.icon ? ""
       : root.appLibrary ? root.appLibrary.iconSource(entry.icon) : Quickshell.iconPath(entry.icon, true)
-    root.iconCache[cls] = icon
+    if (root.iconCacheOn) root.iconCache[cls] = icon
     return icon
   }
 
@@ -987,6 +992,8 @@ Item {
   property string pendingFileQuery: ""
 
   function scheduleFiles(query, isMath) {
+    // A search queued by an earlier keystroke must not fire for this one.
+    fileDebounce.stop()
     root.fileGeneration++
     folderSearch.running = false
     fileSearch.running = false
