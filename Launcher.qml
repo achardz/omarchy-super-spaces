@@ -276,22 +276,28 @@ Item {
 
   // ---- search sources you can switch on and off ("settings") -----------
   // Saved in ~/.config/omarchy/super-spaces/settings.json as
-  // { "sources": { "<name>": true|false } }; anything unset stays on.
+  // { "sources": { "<name>": true|false } }; anything unset uses its default
+  // below. Ask AI starts off: it spends agent quota, so it is opt-in.
   readonly property var sourceList: [
-    { key: "apps", label: "Apps" },
-    { key: "windows", label: "Open windows" },
-    { key: "recent", label: "Recent files" },
-    { key: "files", label: "File search (fd)" },
-    { key: "agents", label: "AI agent sessions" },
-    { key: "menu", label: "Omarchy menu in normal results" },
-    { key: "calc", label: "Calculator" },
-    { key: "web", label: "Web search row" },
-    { key: "ask", label: "Ask AI agent (web search)" }
+    { key: "apps", label: "Apps", on: true },
+    { key: "windows", label: "Open windows", on: true },
+    { key: "recent", label: "Recent files", on: true },
+    { key: "files", label: "File search (fd)", on: true },
+    { key: "agents", label: "AI agent sessions", on: true },
+    { key: "menu", label: "Omarchy menu in normal results", on: true },
+    { key: "calc", label: "Calculator", on: true },
+    { key: "web", label: "Web search row", on: true },
+    { key: "ask", label: "Ask AI agent (web search)", on: false }
   ]
-  property var sourcesOff: ({})
+  // Only what the settings file says explicitly; the rest follow defaults.
+  property var sourceState: ({})
   readonly property string settingsPath: root.home + "/.config/omarchy/super-spaces/settings.json"
 
-  function on(key) { return root.sourcesOff[key] !== true }
+  function on(key) {
+    if (root.sourceState[key] === true || root.sourceState[key] === false) return root.sourceState[key]
+    for (var i = 0; i < root.sourceList.length; i++) if (root.sourceList[i].key === key) return root.sourceList[i].on
+    return true
+  }
 
   FileView {
     id: settingsFile
@@ -299,26 +305,25 @@ Item {
     printErrors: false
     atomicWrites: true
     onLoaded: {
-      var off = ({})
+      var state = ({})
       try {
         var s = JSON.parse(text()).sources || {}
-        for (var k in s) if (s[k] === false) off[k] = true
+        for (var k in s) if (s[k] === true || s[k] === false) state[k] = s[k]
       } catch (e) {
         console.warn("Super Spaces: ignoring settings.json, it is not valid JSON")
       }
-      root.sourcesOff = off
+      root.sourceState = state
       if (root.opened && !root.movingWindow) root.rebuild()
     }
-    onLoadFailed: root.sourcesOff = ({})
+    onLoadFailed: root.sourceState = ({})
   }
 
   function toggleSource(key) {
-    var off = Object.assign({}, root.sourcesOff)
-    if (off[key]) delete off[key]
-    else off[key] = true
-    root.sourcesOff = off
+    var state = Object.assign({}, root.sourceState)
+    state[key] = !root.on(key)
+    root.sourceState = state
     var sources = ({})
-    for (var i = 0; i < root.sourceList.length; i++) sources[root.sourceList[i].key] = !off[root.sourceList[i].key]
+    for (var i = 0; i < root.sourceList.length; i++) sources[root.sourceList[i].key] = root.on(root.sourceList[i].key)
     settingsFile.setText(JSON.stringify({ sources: sources }, null, 2) + "\n")
   }
 
@@ -383,6 +388,9 @@ Item {
   }
 
   function askRows(rest) {
+    if (!root.on("ask"))
+      return [{ kind: "info", title: "Ask AI is off", subtitle: "Turn it on with “settings” → Ask AI agent (web search)",
+                icon: "", glyph: "✦", tag: "Off", payload: "" }]
     var q = String(rest || "").trim()
     if (!q) return [{ kind: "info", title: "Type a question after “ask”", subtitle: "e.g. ask latest hyprland release notes",
                       icon: "", glyph: "✦", tag: "", payload: "" }]
@@ -862,7 +870,7 @@ Item {
     var clipRest = keysRest === null && menuRest === null ? root.clipQuery(query) : null
     var agentRest = keysRest === null && menuRest === null && clipRest === null ? root.agentQuery(query) : null
     var setRest = root.settingsQuery(query)
-    var askRest = root.on("ask") ? root.askQuery(query) : null
+    var askRest = root.askQuery(query)
     if (keysRest !== null || menuRest !== null || clipRest !== null || agentRest !== null || setRest !== null || askRest !== null) {
       // Cancel file searches still waiting from earlier keystrokes ("ke…").
       root.fileGeneration++
