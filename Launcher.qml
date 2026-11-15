@@ -30,7 +30,52 @@ Item {
 
   readonly property int maxWindows: 8
   readonly property int maxApps: 6
+  readonly property int maxRecentApps: 5
   readonly property int maxFiles: 15
+
+  // ---- app usage (what you launch most rises to the top) ---------------
+  // Kept in the plugin's own state file, not shell.json, since it changes on
+  // every launch: { "<desktop id>": { "count": n, "last": epoch ms } }.
+  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || root.home + "/.local/state") + "/anz.super-spaces"
+  property var usage: ({})
+
+  FileView {
+    id: usageFile
+    path: root.stateDir + "/app-usage.json"
+    printErrors: false
+    atomicWrites: true
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text())
+        root.usage = (parsed && typeof parsed === "object") ? parsed : ({})
+      } catch (e) {
+        root.usage = ({})
+      }
+    }
+    onLoadFailed: root.usage = ({})
+  }
+
+  Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.stateDir])
+
+  function recordLaunch(id) {
+    if (!id) return
+    var next = Object.assign({}, root.usage)
+    var prev = next[id] || { count: 0, last: 0 }
+    next[id] = { count: Math.min(9999, Number(prev.count || 0) + 1), last: Date.now() }
+    root.usage = next
+    usageFile.setText(JSON.stringify(next))
+  }
+
+  // Capped well under the gap between Omarchy's match tiers (prefix, contains,
+  // keyword, acronym), so usage reorders apps within a tier but never lets a
+  // weak match beat a strong one.
+  function usageBoost(id) {
+    var u = root.usage[id]
+    if (!u) return 0
+    var boost = Math.min(250, Math.round(80 * Math.log(1 + Number(u.count || 0)) / Math.LN2))
+    if (Date.now() - Number(u.last || 0) < 24 * 3600 * 1000) boost += 50
+    return boost
+  }
 
   // Shares the [menu] surface tokens, so themes that style Omarchy's menu
   // style this too.
@@ -55,6 +100,7 @@ Item {
     Hyprland.refreshToplevels()
     Hyprland.refreshWorkspaces()
     if (root.appLibrary) root.appLibrary.refreshIcons()
+    usageFile.reload()
     root.opened = true
     root.setFilter("")
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -116,16 +162,52 @@ Item {
     return out.slice(0, root.maxWindows)
   }
 
-  function appRows(query) {
-    if (!root.appLibrary || !String(query).trim()) return []
-    var entries = root.appLibrary.sortedEntries(query) || []
-    var out = []
-    for (var i = 0; i < entries.length && out.length < root.maxApps; i++) {
-      var e = entries[i]
-      var name = root.appLibrary.entryName(e)
-      out.push({ kind: "app", title: name, subtitle: root.appLibrary.entrySubtext(e) || "Application",
-                 icon: root.appLibrary.iconSource(e.icon), glyph: "", tag: "App", payload: String(e.id || "") })
+  // Address of an open window belonging to this app, matched on the desktop
+  // entry's StartupWMClass or id against the window class ("" when none).
+  function runningWindowFor(entry) {
+    var id = String(entry.id || "").toLowerCase()
+    var keys = [String(entry.startupClass || "").toLowerCase(), id, id.split(".").pop()]
+      .filter(function(k) { return k.length > 0 })
+    var values = Hyprland.toplevels.values || []
+    for (var i = 0; i < values.length; i++) {
+      var ipc = values[i].lastIpcObject || {}
+      var cls = String(ipc.class || "").toLowerCase()
+      if (!cls) continue
+      if (keys.indexOf(cls) !== -1 || keys.indexOf(cls.split(".").pop()) !== -1) return String(values[i].address || "")
     }
+    return ""
+  }
+
+  function appRow(entry, recent) {
+    var running = root.runningWindowFor(entry)
+    var sub = root.appLibrary.entrySubtext(entry) || "Application"
+    return { kind: "app", title: root.appLibrary.entryName(entry),
+             subtitle: running ? sub + "  ·  open, Enter switches (Shift+Enter: new window)" : sub,
+             icon: root.appLibrary.iconSource(entry.icon), glyph: "",
+             tag: running ? "Running" : (recent ? "Recent" : "App"),
+             payload: String(entry.id || ""), window: running }
+  }
+
+  // Typed: Omarchy's fuzzy app ranking (sortedEntries returns {entry, score}
+  // rows), nudged by how often you launch each app. Empty: your most-used apps.
+  function appRows(query) {
+    if (!root.appLibrary) return []
+    var out = []
+    if (!String(query).trim()) {
+      var ids = Object.keys(root.usage).sort(function(a, b) {
+        return root.usageBoost(b) - root.usageBoost(a)
+      })
+      for (var r = 0; r < ids.length && out.length < root.maxRecentApps; r++) {
+        var known = DesktopEntries.byId(ids[r])
+        if (known && !known.noDisplay) out.push(root.appRow(known, true))
+      }
+      return out
+    }
+    var ranked = (root.appLibrary.sortedEntries(query) || []).map(function(row) {
+      return { entry: row.entry, score: row.score + root.usageBoost(String(row.entry.id || "")) }
+    })
+    ranked.sort(function(a, b) { return b.score - a.score })
+    for (var i = 0; i < ranked.length && out.length < root.maxApps; i++) out.push(root.appRow(ranked[i].entry, false))
     return out
   }
 
@@ -147,10 +229,16 @@ Item {
                   icon: "", glyph: "#", tag: n[1], payload: n[1] })
     }
 
-    rows = rows.concat(root.windowRows(words)).concat(root.appRows(query))
+    // Typing puts apps first (like Raycast); with no text, open windows lead
+    // and your most-used apps follow.
+    var hasText = String(query).trim().length > 0
+    rows = hasText
+      ? rows.concat(root.appRows(query)).concat(root.windowRows(words))
+      : rows.concat(root.windowRows(words)).concat(root.appRows(query))
 
     displayModel.clear()
-    for (var i = 0; i < rows.length; i++) displayModel.append(rows[i])
+    // Every row carries the same roles; only running-app rows fill `window`.
+    for (var i = 0; i < rows.length; i++) displayModel.append(Object.assign({ window: "" }, rows[i]))
     root.clampSelection()
     root.scheduleFiles(query)
   }
@@ -187,7 +275,7 @@ Item {
       var name = path.slice(path.lastIndexOf("/") + 1)
       var shown = path.indexOf(root.home) === 0 ? "~" + path.slice(root.home.length) : path
       displayModel.append({ kind: "file", title: name, subtitle: shown, icon: "",
-                            glyph: isDir ? "▸" : "·", tag: isDir ? "Folder" : "File", payload: path })
+                            glyph: isDir ? "▸" : "·", tag: isDir ? "Folder" : "File", payload: path, window: "" })
     }
     root.clampSelection()
   }
@@ -250,21 +338,30 @@ Item {
     Quickshell.execDetached(["hyprctl", "dispatch", expression])
   }
 
-  function activate(index) {
+  function focusWindow(address) {
+    var addr = address.indexOf("0x") === 0 ? address : "0x" + address
+    if (/^0x[0-9a-fA-F]+$/.test(addr)) root.dispatch("hl.dsp.focus({ window = \"address:" + addr + "\" })")
+  }
+
+  // forceNew (Shift+Enter) launches another instance even if the app is open.
+  function activate(index, forceNew) {
     if (index < 0 || index >= displayModel.count) return
     var row = displayModel.get(index)
     var kind = row.kind
     var payload = String(row.payload)
     var title = String(row.title)
+    var windowAddress = String(row.window || "")
     root.dismiss()
 
     if (kind === "window") {
-      var addr = payload.indexOf("0x") === 0 ? payload : "0x" + payload
-      if (/^0x[0-9a-fA-F]+$/.test(addr)) root.dispatch("hl.dsp.focus({ window = \"address:" + addr + "\" })")
+      root.focusWindow(payload)
     } else if (kind === "workspace") {
       if (/^\d{1,2}$/.test(payload)) root.dispatch("hl.dsp.focus({ workspace = \"" + payload + "\" })")
     } else if (kind === "app") {
-      if (root.appLibrary) root.appLibrary.launch(payload, title)
+      if (!payload) return
+      root.recordLaunch(payload)
+      if (windowAddress && !forceNew) root.focusWindow(windowAddress)
+      else if (root.appLibrary) root.appLibrary.launch(payload, title)
     } else if (kind === "file") {
       Quickshell.execDetached(["xdg-open", payload])
     } else if (kind === "calc") {
@@ -317,7 +414,7 @@ Item {
             root.move(1)
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            root.activate(root.selectedIndex)
+            root.activate(root.selectedIndex, (event.modifiers & Qt.ShiftModifier) !== 0)
             event.accepted = true
           } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
             root.setFilter(root.filterText + event.text)
