@@ -26,6 +26,15 @@ launcher process.
   indexes in the background. Enter opens the file or folder.
 - **Maths**: `12*7`, `(1+2)^3`, `= 10/4`; Enter copies the result.
 - **Workspace number**: type `14` and pick "Go to workspace 14".
+- **Omarchy shortcuts**: start with `keys` (or `shortcut`, `kb`), e.g.
+  `keys theme`, to search the same list as Omarchy's keybindings menu. Enter
+  runs the shortcut through Omarchy's own `omarchy-menu-keybindings`: the
+  plugin starts it with `bin/omarchy-menu-select` first on PATH, a stand-in
+  that answers with the chosen line, so Omarchy dispatches it exactly as its
+  menu would.
+- **Web**: every search ends with "Search the web for …" in your default browser.
+- **Other names**: `chrome`/`browser` finds your browser, `files` your file
+  manager, `code` your editor, `terminal` your terminal (installed apps only).
 
 Up/Down or Tab move, Enter acts, Esc clears then closes. Needs `fd` and
 `wl-copy` (`omarchy pkg add fd wl-clipboard`). Bind it in

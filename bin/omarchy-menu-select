@@ -1,0 +1,11 @@
+#!/bin/bash
+# Stand-in for Omarchy's picker, used only by Super Spaces search.
+#
+# The launcher runs Omarchy's own `omarchy-menu-keybindings` with this folder
+# first on PATH and the chosen line in SUPER_SPACES_PICK. Omarchy's script
+# asks "its" picker which binding was chosen; this answers with that line, and
+# Omarchy's script then runs the binding exactly as its own menu would.
+# Nothing else in the system sees this file.
+cat >/dev/null
+[[ -n ${SUPER_SPACES_PICK:-} ]] || exit 1
+printf '%s\n' "$SUPER_SPACES_PICK"

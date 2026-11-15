@@ -33,6 +33,67 @@ Item {
   readonly property int maxRecentApps: 5
   readonly property int maxFiles: 15
 
+  // ---- Omarchy shortcuts ("keys …") -----------------------------------
+  // The same list as Omarchy's keybindings menu, read when the search opens.
+  // Each entry keeps the exact line Omarchy prints, because running one goes
+  // back through Omarchy's own script (see runShortcut).
+  readonly property int maxShortcuts: 60
+  property var shortcuts: []
+
+  Process {
+    id: shortcutList
+    command: ["omarchy-menu-keybindings", "--print"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var out = []
+        var lines = String(text).split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var parts = lines[i].split("→")
+          if (parts.length < 2) continue
+          var keys = parts[0].trim()
+          var desc = parts.slice(1).join("→").trim()
+          if (keys && desc) out.push({ keys: keys, desc: desc, line: lines[i] })
+        }
+        root.shortcuts = out
+        if (root.opened && root.shortcutQuery(root.filterText) !== null) root.rebuild()
+      }
+    }
+  }
+
+  // "keys", "key", "shortcut(s)" or "kb", optionally followed by a search;
+  // null when the query isn't a shortcut search.
+  function shortcutQuery(query) {
+    var m = /^\s*(keys?|shortcuts?|kb)(?:\s+(.*))?$/i.exec(String(query || ""))
+    return m ? (m[2] || "") : null
+  }
+
+  function shortcutRows(rest) {
+    var words = root.terms(rest)
+    var out = []
+    for (var i = 0; i < root.shortcuts.length && out.length < root.maxShortcuts; i++) {
+      var s = root.shortcuts[i]
+      if (words.length > 0 && !root.matchesAll(s.desc + " " + s.keys, words)) continue
+      out.push({ kind: "key", title: s.desc, subtitle: s.keys, icon: "", glyph: "⌘",
+                 tag: "Shortcut", payload: s.line })
+    }
+    if (out.length === 0 && root.shortcuts.length === 0)
+      out.push({ kind: "info", title: "Loading Omarchy shortcuts…", subtitle: "", icon: "", glyph: "⌘", tag: "", payload: "" })
+    return out
+  }
+
+  // Folder holding the stand-in picker, as a plain path (the plugin URL may
+  // be file:// or qs://).
+  readonly property string binDir: decodeURIComponent(String(Qt.resolvedUrl("bin")).replace(/^[a-z]+:\/\//, ""))
+
+  // Runs a shortcut exactly as Omarchy's keybindings menu does: start
+  // omarchy-menu-keybindings with bin/omarchy-menu-select first on PATH; that
+  // stand-in answers with the chosen line, and Omarchy dispatches it.
+  function runShortcut(line) {
+    if (!line) return
+    Quickshell.execDetached(["env", "PATH=" + root.binDir + ":" + Quickshell.env("PATH"),
+                             "SUPER_SPACES_PICK=" + line, "omarchy-menu-keybindings"])
+  }
+
   // ---- app usage (what you launch most rises to the top) ---------------
   // Kept in the plugin's own state file, not shell.json, since it changes on
   // every launch: { "<desktop id>": { "count": n, "last": epoch ms } }.
@@ -101,6 +162,7 @@ Item {
     Hyprland.refreshWorkspaces()
     if (root.appLibrary) root.appLibrary.refreshIcons()
     usageFile.reload()
+    shortcutList.running = true
     root.opened = true
     root.setFilter("")
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -247,6 +309,21 @@ Item {
     var words = root.terms(query)
     var rows = []
 
+    // "keys …" searches Omarchy's shortcuts only.
+    var keysRest = root.shortcutQuery(query)
+    if (keysRest !== null) {
+      // Cancel file searches still waiting from earlier keystrokes ("ke…").
+      root.fileGeneration++
+      fileDebounce.stop()
+      folderSearch.running = false
+      fileSearch.running = false
+      rows = root.shortcutRows(keysRest)
+      displayModel.clear()
+      for (var k = 0; k < rows.length; k++) displayModel.append(Object.assign({ window: "" }, rows[k]))
+      root.clampSelection()
+      return
+    }
+
     var calc = Calc.evaluate(query)
     if (calc !== null) {
       var value = Calc.format(calc)
@@ -321,7 +398,7 @@ Item {
     id: fileDebounce
     interval: 160
     onTriggered: {
-      if (!root.opened) return
+      if (!root.opened || root.shortcutQuery(root.filterText) !== null) return
       folderSearch.generation = root.fileGeneration
       fileSearch.generation = root.fileGeneration
       folderSearch.command = root.fdCommand("d", 5)
@@ -403,6 +480,8 @@ Item {
       Quickshell.execDetached(["xdg-open", payload])
     } else if (kind === "web") {
       if (payload.indexOf("https://www.google.com/search?q=") === 0) Quickshell.execDetached(["xdg-open", payload])
+    } else if (kind === "key") {
+      root.runShortcut(payload)
     } else if (kind === "calc") {
       Quickshell.execDetached(["wl-copy", "--", payload])
     }
@@ -479,7 +558,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || "Search windows, apps, files, or type maths…"
+            text: root.filterText || "Search windows, apps, files, maths — or “keys …” for shortcuts"
             color: root.foreground
             opacity: root.filterText ? 1 : 0.58
             font.family: root.fontFamily
