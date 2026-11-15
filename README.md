@@ -30,7 +30,7 @@ The plugin installer never runs scripts or touches keybindings, so this is
 opt-in. Link the script onto your PATH:
 
 ```bash
-ln -s ~/.config/omarchy/plugins/anzlaptop.super-spaces/extras/workspace-goto ~/.local/bin/workspace-goto
+ln -s ~/.config/omarchy/plugins/anz.super-spaces/extras/workspace-goto ~/.local/bin/workspace-goto
 ```
 
 Then bind it in `~/.config/hypr/bindings.lua` (check the keys are free with
@@ -44,7 +44,7 @@ o.bind("SUPER + ALT + N", "Move window to workspace number", os.getenv("HOME") .
 ## Remove
 
 ```bash
-omarchy plugin remove anzlaptop.super-spaces
+omarchy plugin remove anz.super-spaces
 rm ~/.local/bin/workspace-goto   # if you set up the Super + N extra
 ```
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pick a workspace from the list of existing ones (with their apps), or choose
 # "Other number…" to type any 1-99; with --move, take the active window along.
-# Part of Super Spaces (anzlaptop.super-spaces); see README for the Super + N setup.
+# Part of Super Spaces (anz.super-spaces); see README for the Super + N setup.
 set -euo pipefail
 
 label="Go to workspace"
