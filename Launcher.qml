@@ -8,6 +8,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "Calc.js" as Calc
+import "MenuSource.js" as MenuSource
 
 // Super Spaces search: one box for open windows (by app, title or workspace),
 // apps, files and quick maths. It runs inside the Omarchy shell that is
@@ -32,6 +33,83 @@ Item {
   readonly property int maxApps: 6
   readonly property int maxRecentApps: 5
   readonly property int maxFiles: 15
+
+  // ---- Omarchy menu entries ("menu …", and the best few in any search) --
+  // Read from Omarchy's own menu definition plus the user's extensions file
+  // (which overrides it), and reloaded when either changes.
+  readonly property int maxMenuInline: 4
+  readonly property int maxMenu: 60
+  property var menuDefaults: ({})
+  property var menuUser: ({})
+  property var menuEntries: []
+
+  function rebuildMenuEntries() {
+    root.menuEntries = MenuSource.entries(MenuSource.merge(root.menuDefaults, root.menuUser))
+    if (root.opened) root.rebuild()
+  }
+
+  FileView {
+    path: (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/default/omarchy/omarchy-menu.jsonc"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: { root.menuDefaults = MenuSource.parse(text()); root.rebuildMenuEntries() }
+  }
+
+  FileView {
+    path: root.home + "/.config/omarchy/extensions/omarchy-menu.jsonc"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: { root.menuUser = MenuSource.parse(text()); root.rebuildMenuEntries() }
+    onLoadFailed: { root.menuUser = ({}); root.rebuildMenuEntries() }
+  }
+
+  // "menu …", "omarchy …" or "om …"; null when the query isn't a menu search.
+  function menuQuery(query) {
+    var m = /^\s*(menu|omarchy|om)(?:\s+(.*))?$/i.exec(String(query || ""))
+    return m ? (m[2] || "") : null
+  }
+
+  // Label starting with a word beats label containing it beats a match only
+  // in the path, aliases or id; shallower entries win ties.
+  function menuScore(entry, words) {
+    var label = entry.label.toLowerCase()
+    var score = 0
+    for (var i = 0; i < words.length; i++) {
+      if (entry.search.indexOf(words[i]) < 0) return -1
+      if (label.indexOf(words[i]) === 0 || label.indexOf(" " + words[i]) >= 0) score += 30
+      else if (label.indexOf(words[i]) >= 0) score += 20
+      else score += 10
+    }
+    return score - entry.id.split(".").length
+  }
+
+  function menuRows(rest, limit) {
+    var words = root.terms(rest)
+    var scored = []
+    for (var i = 0; i < root.menuEntries.length; i++) {
+      var e = root.menuEntries[i]
+      var s = words.length > 0 ? root.menuScore(e, words) : -e.id.split(".").length
+      if (s >= (words.length > 0 ? 0 : -1)) scored.push({ e: e, s: s })
+    }
+    // Ties keep Omarchy's own menu order (its file order).
+    scored.sort(function(a, b) { return (b.s - a.s) || (a.e.order - b.e.order) })
+    var out = []
+    for (var j = 0; j < scored.length && out.length < limit; j++) {
+      var entry = scored[j].e
+      // Conditional rows (when/disabled) open their parent page so Omarchy
+      // decides what's available; everything else goes straight to its id.
+      var route = entry.conditional && entry.kind === "action" ? entry.id.split(".").slice(0, -1).join(".") : entry.id
+      var hint = entry.kind === "action"
+        ? (entry.conditional ? "Opens " + (entry.path || "the Omarchy menu") : "Runs from the Omarchy menu")
+        : "Opens in the Omarchy menu"
+      out.push({ kind: "menu", title: entry.label,
+                 subtitle: (entry.path ? entry.path + "  ·  " : "") + hint,
+                 icon: "", glyph: entry.icon || "›", tag: entry.kind === "action" ? "Action" : "Menu", payload: route })
+    }
+    return out
+  }
 
   // ---- Omarchy shortcuts ("keys …") -----------------------------------
   // The same list as Omarchy's keybindings menu, read when the search opens.
@@ -309,15 +387,16 @@ Item {
     var words = root.terms(query)
     var rows = []
 
-    // "keys …" searches Omarchy's shortcuts only.
+    // "keys …" searches Omarchy's shortcuts only, "menu …" its menu only.
     var keysRest = root.shortcutQuery(query)
-    if (keysRest !== null) {
+    var menuRest = keysRest === null ? root.menuQuery(query) : null
+    if (keysRest !== null || menuRest !== null) {
       // Cancel file searches still waiting from earlier keystrokes ("ke…").
       root.fileGeneration++
       fileDebounce.stop()
       folderSearch.running = false
       fileSearch.running = false
-      rows = root.shortcutRows(keysRest)
+      rows = keysRest !== null ? root.shortcutRows(keysRest) : root.menuRows(menuRest, root.maxMenu)
       displayModel.clear()
       for (var k = 0; k < rows.length; k++) displayModel.append(Object.assign({ window: "" }, rows[k]))
       root.clampSelection()
@@ -343,7 +422,9 @@ Item {
     var hasText = String(query).trim().length > 0
     if (hasText) {
       var q = String(query).trim()
-      rows = rows.concat(root.appRows(query)).concat(root.windowRows(words))
+      rows = rows.concat(root.appRows(query))
+      if (q.length >= 2) rows = rows.concat(root.menuRows(q, root.maxMenuInline))
+      rows = rows.concat(root.windowRows(words))
       rows.push({ kind: "web", title: "Search the web for “" + q + "”", subtitle: "Opens in your default browser",
                   icon: "", glyph: "⌕", tag: "Web", payload: "https://www.google.com/search?q=" + encodeURIComponent(q) })
     } else {
@@ -480,6 +561,10 @@ Item {
       Quickshell.execDetached(["xdg-open", payload])
     } else if (kind === "web") {
       if (payload.indexOf("https://www.google.com/search?q=") === 0) Quickshell.execDetached(["xdg-open", payload])
+    } else if (kind === "menu") {
+      // Same as `omarchy menu summon <route>`: submenus open, actions run.
+      if (payload) Quickshell.execDetached(["omarchy-menu", "summon", payload])
+      else Quickshell.execDetached(["omarchy-menu"])
     } else if (kind === "key") {
       root.runShortcut(payload)
     } else if (kind === "calc") {

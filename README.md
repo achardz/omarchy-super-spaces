@@ -32,6 +32,14 @@ launcher process.
   plugin starts it with `bin/omarchy-menu-select` first on PATH, a stand-in
   that answers with the chosen line, so Omarchy dispatches it exactly as its
   menu would.
+- **Omarchy menu**: start with `menu` (or `omarchy`, `om`) to search every
+  page and action of the Omarchy menu, e.g. `menu install`, listed in Omarchy's
+  own order with their path (`Install › Development › …`). The best few menu
+  matches also appear in normal searches (`lock` → System › Lock). Enter goes
+  through `omarchy menu summon`: pages open in the Omarchy menu, actions run
+  as they would there, and actions with a `when`/`disabled` condition open
+  their parent page so Omarchy decides what is available. Entries come from
+  Omarchy's menu file plus `~/.config/omarchy/extensions/omarchy-menu.jsonc`.
 - **Web**: every search ends with "Search the web for …" in your default browser.
 - **Other names**: `chrome`/`browser` finds your browser, `files` your file
   manager, `code` your editor, `terminal` your terminal (installed apps only).
