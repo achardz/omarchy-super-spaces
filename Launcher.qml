@@ -377,7 +377,8 @@ Item {
   }
 
   function askRow(q) {
-    return { kind: "ask", title: "Ask AI: “" + q + "”", subtitle: "omp searches the web and answers, in a terminal",
+    return { kind: "ask", title: "Ask AI: “" + q + "”",
+             subtitle: (root.defaultAgent || "Your default agent") + " searches the web and answers here",
              icon: "", glyph: "✦", tag: "Ask AI", payload: q }
   }
 
@@ -388,12 +389,100 @@ Item {
     return [root.askRow(q)]
   }
 
-  function askAgent(q) {
+  // ---- answers rendered in the search ----------------------------------
+  // Enter on "Ask AI" runs bin/agent-ask, which asks the system default
+  // agent (omarchy-default-agent) non-interactively; the answer is drawn
+  // here as plain text. Agents without such a mode open in a terminal via
+  // `omarchy agent prompt`, Omarchy's own way. The question is an argv
+  // element, never shell text.
+  property string defaultAgent: ""
+  property bool askView: false
+  property bool askRunning: false
+  property string askQuestion: ""
+  property string askAnswer: ""
+  property string askError: ""
+  property real askStartedAt: 0
+  property int askElapsed: 0
+
+  Process {
+    id: whichAgent
+    command: [root.binDir + "/agent-ask", "--which"]
+    stdout: StdioCollector { onStreamFinished: root.defaultAgent = String(text).trim() }
+  }
+
+  Process {
+    id: askProc
+    stdout: StdioCollector { id: askOut }
+    stderr: StdioCollector { id: askErr }
+    // A cancelled ask (Esc, or a new question) must not overwrite the view:
+    // only an exit while its answer is still awaited counts.
+    onExited: function(code) {
+      Qt.callLater(function() {
+        if (askProc.running || !root.askRunning) return
+        root.askRunning = false
+        askTicker.stop()
+        if (code === 3) {
+          // No non-interactive mode for this agent: hand over to Omarchy.
+          root.askView = false
+          Quickshell.execDetached(["omarchy-agent-prompt", root.askQuestion])
+          root.dismiss()
+          return
+        }
+        var out = root.cleanAnswer(String(askOut.text || ""))
+        if (code === 0 && out) root.askAnswer = out
+        else root.askError = (String(askErr.text || "").trim().split("\n").filter(function(l) { return l && l !== "Working..." }).slice(-3).join("\n"))
+          || ("The agent stopped with exit code " + code)
+      })
+    }
+  }
+
+  Timer {
+    id: askTicker
+    interval: 1000
+    repeat: true
+    onTriggered: root.askElapsed = Math.round((Date.now() - root.askStartedAt) / 1000)
+  }
+
+  // Plain text only (web content never becomes markup); light Markdown tidy.
+  function cleanAnswer(text) {
+    return String(text).replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, "").replace(/`([^`]+)`/g, "$1").trim()
+  }
+
+  function startAsk(q) {
     q = String(q || "").trim()
     if (!q) return
-    Quickshell.execDetached(["uwsm-app", "--", "xdg-terminal-exec", "--dir=" + root.home,
-      "omp", "Search the web and answer briefly with source links: " + q])
+    if (askProc.running) askProc.running = false
+    root.askQuestion = q
+    root.askAnswer = ""
+    root.askError = ""
+    root.askView = true
+    root.askRunning = true
+    root.askStartedAt = Date.now()
+    root.askElapsed = 0
+    askTicker.restart()
+    askProc.command = [root.binDir + "/agent-ask", q]
+    askProc.running = true
   }
+
+  function leaveAsk() {
+    if (askProc.running) askProc.running = false
+    askTicker.stop()
+    root.askRunning = false
+    root.askView = false
+    root.setFilter("ask " + root.askQuestion)
+  }
+
+  function copyAnswer() {
+    if (root.askAnswer) Quickshell.execDetached(["wl-copy", "--", root.askAnswer])
+  }
+
+  // Ctrl+O: keep going with the default agent in a terminal.
+  function continueAskInTerminal() {
+    if (!root.askQuestion) return
+    Quickshell.execDetached(["omarchy-agent-prompt", root.askQuestion])
+    root.dismiss()
+  }
+
 
   function agentQuery(query) {
     var m = /^\s*(ai|agents?|sessions?)(?:\s+(.*))?$/i.exec(String(query || ""))
@@ -563,8 +652,10 @@ Item {
       agentList.running = true
     }
     shortcutList.running = true
+    whichAgent.running = true
     root.opened = true
-    root.setFilter("")
+    // An answer still loading (or shown) when the search was closed comes back.
+    if (!root.askView) root.setFilter("")
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -1006,6 +1097,11 @@ Item {
       root.rebuild()
       return
     }
+    // Asking keeps the search open and shows the answer in it.
+    if (kind === "ask") {
+      root.startAsk(payload)
+      return
+    }
     var moving = root.movingWindow
     root.movingWindow = ""
     root.dismiss()
@@ -1036,7 +1132,7 @@ Item {
     } else if (kind === "clip") {
       root.useClip(payload, forceNew)
     } else if (kind === "ask") {
-      root.askAgent(payload)
+      root.startAsk(payload)
     } else if (kind === "agent") {
       root.resumeAgent(payload)
     } else if (kind === "calc") {
@@ -1075,6 +1171,15 @@ Item {
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
+          if (root.askView) {
+            if (event.key === Qt.Key_Escape) root.leaveAsk()
+            else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { root.copyAnswer(); root.dismiss() }
+            else if (event.key === Qt.Key_O && event.modifiers === Qt.ControlModifier) root.continueAskInTerminal()
+            else if (event.key === Qt.Key_Down) answerFlick.contentY = Math.min(answerFlick.contentY + 40, Math.max(0, answerFlick.contentHeight - answerFlick.height))
+            else if (event.key === Qt.Key_Up) answerFlick.contentY = Math.max(0, answerFlick.contentY - 40)
+            event.accepted = true
+            return
+          }
           if (event.key === Qt.Key_Escape) {
             if (root.movingWindow) { root.movingWindow = ""; root.setFilter("") }
             else if (root.filterText) root.setFilter("")
@@ -1122,11 +1227,12 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || (root.movingWindow
+            text: root.askView ? "Ask " + (root.defaultAgent || "AI") + ": " + root.askQuestion
+              : root.filterText || (root.movingWindow
               ? "Move window to workspace… (type a number)"
-              : "Search windows, apps, files, maths — or “keys”, “menu”, “clip” …")
+              : "Search windows, apps, files, maths — or “keys”, “menu”, “clip”, “ask” …")
             color: root.foreground
-            opacity: root.filterText ? 1 : 0.58
+            opacity: root.filterText || root.askView ? 1 : 0.58
             font.family: root.fontFamily
             font.pixelSize: Style.font.heading
             elide: Text.ElideRight
@@ -1134,6 +1240,7 @@ Item {
         }
 
         ListView {
+          visible: !root.askView
           id: resultList
           width: parent.width
           height: parent.height - root.headerHeight - Style.spacing.md
@@ -1243,6 +1350,57 @@ Item {
             opacity: 0.5
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
+          }
+        }
+
+        // The answer, as plain text, with the keys that act on it.
+        Item {
+          visible: root.askView
+          width: parent.width
+          height: parent.height - root.headerHeight - Style.spacing.md
+
+          Flickable {
+            id: answerFlick
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: askHint.top
+            anchors.bottomMargin: Style.spacing.md
+            contentHeight: answerText.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            Text {
+              id: answerText
+              width: answerFlick.width
+              textFormat: Text.PlainText
+              wrapMode: Text.Wrap
+              text: root.askRunning
+                ? "Searching the web with " + (root.defaultAgent || "your default agent") + "… " + root.askElapsed + " s"
+                : (root.askAnswer || root.askError)
+              color: root.foreground
+              opacity: root.askRunning || root.askError ? 0.6 : 1
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              lineHeight: 1.15
+            }
+          }
+
+          Text {
+            id: askHint
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            textFormat: Text.PlainText
+            text: root.askRunning
+              ? "Esc cancels  ·  Ctrl+O continue in a terminal"
+              : (root.askAnswer ? "Enter copies the answer  ·  Ctrl+O follow up in a terminal  ·  ↑↓ scroll  ·  Esc back"
+                                : "Ctrl+O try in a terminal  ·  Esc back")
+            color: root.foreground
+            opacity: 0.5
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
           }
         }
       }

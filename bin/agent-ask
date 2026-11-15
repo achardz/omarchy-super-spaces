@@ -1,0 +1,37 @@
+#!/bin/bash
+# Asks the system's default AI agent (omarchy-default-agent) one question,
+# non-interactively, and prints the answer. Used by Super Spaces search.
+#
+#   agent-ask --which          print the default agent's name
+#   agent-ask <question...>    print the answer on stdout
+#
+# Exit 3 when the default agent has no non-interactive mode here; the caller
+# then opens it in a terminal with `omarchy agent prompt` instead.
+set -uo pipefail
+
+agent=$(omarchy-default-agent 2>/dev/null || true)
+if [[ ${1:-} == --which ]]; then
+  echo "${agent:-none}"
+  exit 0
+fi
+[[ -n $agent ]] || { echo "No default agent. Choose one with: omarchy default agent <name>" >&2; exit 3; }
+command -v "$agent" >/dev/null 2>&1 || { echo "$agent is not installed" >&2; exit 3; }
+
+question="$*"
+prompt="Search the web and answer briefly (at most 10 lines) with 1-3 source links. Reply with the answer only. Question: $question"
+
+cd "$HOME" || exit 1
+# Print modes read piped stdin as extra prompt and wait for it to end; the
+# shell hands us an open pipe, so give the agent nothing to wait for.
+exec </dev/null
+case "$agent" in
+  # The "smol" role (your fast, cheap model) with thinking off: quick answers.
+  omp)      exec omp -p --no-session --tools=web_search --model @smol --thinking off "$prompt" ;;
+  claude)   exec claude -p --allowedTools "WebSearch,WebFetch" -- "$prompt" ;;
+  codex)    exec codex exec --skip-git-repo-check -- "$prompt" ;;
+  opencode) exec opencode run "$prompt" ;;
+  pi)       exec pi -p "$prompt" ;;
+  gemini)   exec gemini -p "$prompt" ;;
+  qwen)     exec qwen -p "$prompt" ;;
+  *)        echo "$agent has no non-interactive mode here" >&2; exit 3 ;;
+esac

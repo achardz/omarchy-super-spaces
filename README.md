@@ -52,7 +52,7 @@ Open it with your key (see [Setup](#setup)) and type.
 | `lock`, `theme`… | the best few Omarchy menu entries | open / run them |
 | words from a past agent task | the 3 best matching agent sessions | resume it |
 | anything | "Search the web for …" at the end | open in your browser |
-| anything (3+ letters) | "Ask AI: …" last | omp searches the web and answers, in a terminal |
+| anything (3+ letters) | "Ask AI: …" last | your default agent searches the web; the answer shows here |
 
 **With a prefix**, only one source is searched:
 
@@ -62,7 +62,7 @@ Open it with your key (see [Setup](#setup)) and type.
 | `keys …` (`shortcut`, `kb`) | Omarchy's keybindings, by name or key combo | run the shortcut, via Omarchy's own keybindings script |
 | `clip …` (`cb`) | Omarchy's clipboard history | paste it; **Shift+Enter** only copies |
 | `ai …` (`agent`, `session`) | sessions of AI agents logged on this PC: omp, plus Claude Code and Codex when their logs exist; newest first, with folder and age | resume it in a terminal in its folder (`omp --resume`, `claude --resume`, `codex resume`) |
-| `ask …` (`?`) | — (one row with your question) | open omp in a terminal with the question; it uses its web search and cites sources, and stays open for follow-ups |
+| `ask …` (`?`) | — (one row with your question) | ask the system's default agent (`omarchy default agent`) in the background and show its answer here, with sources. Enter copies it, **Ctrl+O** follows up in a terminal, ↑↓ scroll, Esc back. omp uses your `smol` model with thinking off (~10 s); Claude Code, Codex, OpenCode, Pi, Gemini and Qwen use their print modes; other agents open in a terminal via `omarchy agent prompt` |
 | `settings` (`options`) | the search sources, each **On**/**Off** | flip it (the search stays open) |
 
 **Keys**
