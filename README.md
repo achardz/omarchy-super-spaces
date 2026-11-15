@@ -19,10 +19,35 @@ omarchy plugin add https://github.com/achardz/omarchy-super-spaces.git --enable
 omarchy restart shell
 ```
 
+## Optional: jump to any workspace with Super + N
+
+`extras/workspace-goto` opens a list of your workspaces with the apps on each
+(the current one marked `●`). Type to filter, Enter to go, or pick
+**Other number…** to type any workspace from 1 to 99. With `--move` it takes
+the focused window along.
+
+The plugin installer never runs scripts or touches keybindings, so this is
+opt-in. Link the script onto your PATH:
+
+```bash
+ln -s ~/.config/omarchy/plugins/anzlaptop.super-spaces/extras/workspace-goto ~/.local/bin/workspace-goto
+```
+
+Then bind it in `~/.config/hypr/bindings.lua` (check the keys are free with
+`omarchy menu keybindings --print`):
+
+```lua
+o.bind("SUPER + N", "Go to workspace number", os.getenv("HOME") .. "/.local/bin/workspace-goto")
+o.bind("SUPER + ALT + N", "Move window to workspace number", os.getenv("HOME") .. "/.local/bin/workspace-goto --move")
+```
+
 ## Remove
 
 ```bash
 omarchy plugin remove anzlaptop.super-spaces
+rm ~/.local/bin/workspace-goto   # if you set up the Super + N extra
 ```
+
+Also delete the two `o.bind` lines if you added them.
 
 MIT — based on Omarchy's `omarchy.workspaces` widget.

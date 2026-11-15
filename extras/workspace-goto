@@ -1,0 +1,43 @@
+#!/bin/bash
+# Pick a workspace from the list of existing ones (with their apps), or choose
+# "Other number…" to type any 1-99; with --move, take the active window along.
+# Part of Super Spaces (anzlaptop.super-spaces); see README for the Super + N setup.
+set -euo pipefail
+
+label="Go to workspace"
+[[ ${1:-} == --move ]] && label="Move window to workspace"
+other="Other number…"
+
+current=$(hyprctl activeworkspace -j | jq '.id')
+
+# One row per workspace: "<icon><TAB><id><TAB><apps on it>". omarchy-menu-select
+# shows the icon but drops it from what it returns, so the pick comes back as
+# "<id><TAB><apps>". The current workspace gets a filled dot.
+mapfile -t rows < <(
+  hyprctl clients -j | jq -r --argjson cur "$current" --slurpfile ws <(hyprctl workspaces -j) '
+    . as $clients
+    | $ws[0] | map(select(.id > 0)) | sort_by(.id)[]
+    | .id as $id
+    | ([$clients[] | select(.workspace.id == $id) | .class] | unique | join(", ")) as $apps
+    | "\(if $id == $cur then "●" else "○" end)\t\($id)\t\(if $apps == "" then "empty" else $apps end)"'
+)
+
+choice=$(omarchy-menu-select "$label" "${rows[@]}" "$other" -- --width 420) || exit 0
+
+if [[ $choice == "$other" ]]; then
+  n=$(omarchy-menu-input "$label" --width 300) || exit 0
+else
+  n=${choice%%$'\t'*}
+fi
+n=${n//[[:space:]]/}
+
+if [[ ! $n =~ ^[1-9][0-9]?$ ]]; then
+  notify-send "Workspace" "Type a number from 1 to 99 (got: ${n:-nothing})"
+  exit 1
+fi
+
+if [[ ${1:-} == --move ]]; then
+  hyprctl dispatch "hl.dsp.window.move({ workspace = \"$n\" })" >/dev/null
+else
+  hyprctl dispatch "hl.dsp.focus({ workspace = \"$n\" })" >/dev/null
+fi

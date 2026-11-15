@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "anzlaptop.super-spaces",
   "name": "Super Spaces",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "anz",
   "license": "MIT",
   "description": "Workspace indicators where workspaces past 9 fold behind a +/- toggle, like the tray drawer, and show their full number",
