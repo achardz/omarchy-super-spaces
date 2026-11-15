@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "anz.super-spaces",
   "name": "Super Spaces",
-  "version": "1.4.1a",
+  "version": "1.5.0",
   "author": "anz",
   "license": "MIT",
   "description": "A tidier workspace bar (workspaces past 9 fold behind +N) and a Raycast-style search for windows, apps, files, maths, the Omarchy menu, shortcuts, clipboard and AI agents, running inside the Omarchy shell",
