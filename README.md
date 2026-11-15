@@ -21,10 +21,11 @@ omarchy restart shell
 
 ## Optional: jump to any workspace with Super + N
 
-`extras/workspace-goto` opens a list of your workspaces with the apps on each
-(the current one marked `●`). Type to filter, Enter to go, or pick
-**Other number…** to type any workspace from 1 to 99. With `--move` it takes
-the focused window along.
+`extras/workspace-goto` opens a list of your workspaces showing what is on each
+one, as `app: window title` (the current workspace is marked `●`). Typing
+filters on that content too, so `youtube`, a file name or a project finds the
+workspace that has it open. Enter goes there, or pick **Other number…** to
+type any workspace from 1 to 99. With `--move` it takes the focused window along.
 
 The plugin installer never runs scripts or touches keybindings, so this is
 opt-in. Link the script onto your PATH:

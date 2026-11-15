@@ -10,16 +10,27 @@ other="Other number…"
 
 current=$(hyprctl activeworkspace -j | jq '.id')
 
-# One row per workspace: "<icon><TAB><id><TAB><apps on it>". omarchy-menu-select
+# One row per workspace: "<icon><TAB><id><TAB><what's on it>". omarchy-menu-select
 # shows the icon but drops it from what it returns, so the pick comes back as
-# "<id><TAB><apps>". The current workspace gets a filled dot.
+# "<id><TAB>...". The current workspace gets a filled dot.
+#
+# The subtext lists each window as "<app>: <title>" and the menu filters on it,
+# so typing "youtube", a file name or a site finds the workspace showing it.
+# Tabs/newlines in titles would break the row format, so they become spaces.
 mapfile -t rows < <(
   hyprctl clients -j | jq -r --argjson cur "$current" --slurpfile ws <(hyprctl workspaces -j) '
+    def clean: gsub("[\t\n\r]+"; " ") | gsub("^ +| +$"; "");
+    # Web apps ("chrome-x.com__-Default") keep their site; others their last segment.
+    def short: if startswith("chrome-") then sub("^chrome-"; "") | sub("__.*$"; "") else split(".") | last end | clean;
+    def cut(n): if length > n then .[0:n] + "…" else . end;
     . as $clients
     | $ws[0] | map(select(.id > 0)) | sort_by(.id)[]
     | .id as $id
-    | ([$clients[] | select(.workspace.id == $id) | .class] | unique | join(", ")) as $apps
-    | "\(if $id == $cur then "●" else "○" end)\t\($id)\t\(if $apps == "" then "empty" else $apps end)"'
+    | ([$clients[] | select(.workspace.id == $id)
+        | (.class | short) as $app | (.title | clean | cut(60)) as $t
+        | if $t == "" or ($t | ascii_downcase) == ($app | ascii_downcase) then $app else "\($app): \($t)" end]
+       | join("  ·  ")) as $wins
+    | "\(if $id == $cur then "●" else "○" end)\t\($id)\t\(if $wins == "" then "empty" else $wins end)"'
 )
 
 choice=$(omarchy-menu-select "$label" "${rows[@]}" "$other" -- --width 420) || exit 0
