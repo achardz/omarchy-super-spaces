@@ -263,7 +263,7 @@ Item {
     onLoadFailed: root.usage = ({})
   }
 
-  Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.stateDir])
+  Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.stateDir, root.home + "/.config/omarchy/super-spaces"])
 
   function recordLaunch(id) {
     if (!id) return
@@ -272,6 +272,141 @@ Item {
     next[id] = { count: Math.min(9999, Number(prev.count || 0) + 1), last: Date.now() }
     root.usage = next
     usageFile.setText(JSON.stringify(next))
+  }
+
+  // ---- search sources you can switch on and off ("settings") -----------
+  // Saved in ~/.config/omarchy/super-spaces/settings.json as
+  // { "sources": { "<name>": true|false } }; anything unset stays on.
+  readonly property var sourceList: [
+    { key: "apps", label: "Apps" },
+    { key: "windows", label: "Open windows" },
+    { key: "recent", label: "Recent files" },
+    { key: "files", label: "File search (fd)" },
+    { key: "agents", label: "AI agent sessions" },
+    { key: "menu", label: "Omarchy menu in normal results" },
+    { key: "calc", label: "Calculator" },
+    { key: "web", label: "Web search row" }
+  ]
+  property var sourcesOff: ({})
+  readonly property string settingsPath: root.home + "/.config/omarchy/super-spaces/settings.json"
+
+  function on(key) { return root.sourcesOff[key] !== true }
+
+  FileView {
+    id: settingsFile
+    path: root.settingsPath
+    printErrors: false
+    atomicWrites: true
+    onLoaded: {
+      var off = ({})
+      try {
+        var s = JSON.parse(text()).sources || {}
+        for (var k in s) if (s[k] === false) off[k] = true
+      } catch (e) {
+        console.warn("Super Spaces: ignoring settings.json, it is not valid JSON")
+      }
+      root.sourcesOff = off
+      if (root.opened && !root.movingWindow) root.rebuild()
+    }
+    onLoadFailed: root.sourcesOff = ({})
+  }
+
+  function toggleSource(key) {
+    var off = Object.assign({}, root.sourcesOff)
+    if (off[key]) delete off[key]
+    else off[key] = true
+    root.sourcesOff = off
+    var sources = ({})
+    for (var i = 0; i < root.sourceList.length; i++) sources[root.sourceList[i].key] = !off[root.sourceList[i].key]
+    settingsFile.setText(JSON.stringify({ sources: sources }, null, 2) + "\n")
+  }
+
+  // "settings" or "options" lists the sources; Enter flips one.
+  function settingsQuery(query) {
+    var m = /^\s*(settings|options)(?:\s+(.*))?$/i.exec(String(query || ""))
+    return m ? (m[2] || "") : null
+  }
+
+  function settingsRows(rest) {
+    var words = root.terms(rest)
+    var out = []
+    for (var i = 0; i < root.sourceList.length; i++) {
+      var s = root.sourceList[i]
+      if (words.length > 0 && !root.matchesAll(s.label + " " + s.key, words)) continue
+      var isOn = root.on(s.key)
+      out.push({ kind: "toggle", title: s.label, subtitle: isOn ? "On  ·  Enter turns it off" : "Off  ·  Enter turns it on",
+                 icon: "", glyph: isOn ? "●" : "○", tag: isOn ? "On" : "Off", payload: s.key })
+    }
+    return out
+  }
+
+  // ---- AI agent sessions ("ai …") --------------------------------------
+  // Sessions of agents logged on this machine (omp; Claude Code and Codex
+  // when their logs exist), listed by bin/agent-sessions when the search
+  // opens. Enter resumes one in a terminal, in the folder it ran in.
+  readonly property int maxAgentsInline: 3
+  readonly property int maxAgents: 40
+  property var agentSessions: []
+
+  Process {
+    id: agentList
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var out = []
+        var lines = String(text).split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var f = lines[i].split("\t")
+          if (f.length < 5 || !f[1]) continue
+          out.push({ agent: f[0], id: f[1], title: f[2], cwd: f[3], time: Number(f[4]) || 0 })
+        }
+        root.agentSessions = out
+        if (root.opened && !root.movingWindow) root.rebuild()
+      }
+    }
+  }
+
+  function agentQuery(query) {
+    var m = /^\s*(ai|agents?|sessions?)(?:\s+(.*))?$/i.exec(String(query || ""))
+    return m ? (m[2] || "") : null
+  }
+
+  function ago(seconds) {
+    var d = Math.max(0, Date.now() / 1000 - seconds)
+    if (d < 3600) return Math.max(1, Math.round(d / 60)) + " min ago"
+    if (d < 86400) return Math.round(d / 3600) + " h ago"
+    return Math.round(d / 86400) + " d ago"
+  }
+
+  function agentRows(rest, limit) {
+    var words = root.terms(rest)
+    var out = []
+    for (var i = 0; i < root.agentSessions.length && out.length < limit; i++) {
+      var s = root.agentSessions[i]
+      if (words.length > 0 && !root.matchesAll(s.agent + " " + s.title + " " + s.cwd + " " + s.id, words)) continue
+      var where = s.cwd.indexOf(root.home) === 0 ? "~" + s.cwd.slice(root.home.length) : s.cwd
+      out.push({ kind: "agent", title: s.title || ("Session " + s.id.slice(0, 8)),
+                 subtitle: s.agent + "  ·  " + (where || "~") + "  ·  " + root.ago(s.time),
+                 icon: "", glyph: "✦", tag: "Agent",
+                 payload: JSON.stringify({ agent: s.agent, id: s.id, cwd: s.cwd }) })
+    }
+    if (out.length === 0 && limit === root.maxAgents)
+      out.push({ kind: "info", title: root.agentSessions.length ? "No matching sessions" : "No agent sessions found",
+                 subtitle: "", icon: "", glyph: "✦", tag: "", payload: "" })
+    return out
+  }
+
+  // Resume command per agent; ids are checked so nothing odd reaches argv.
+  function resumeAgent(payload) {
+    var s
+    try { s = JSON.parse(payload) } catch (e) { return }
+    if (!s || !/^[A-Za-z0-9_-]+$/.test(String(s.id))) return
+    var cmd = s.agent === "omp" ? ["omp", "--resume", s.id]
+      : s.agent === "claude" ? ["claude", "--resume", s.id]
+      : s.agent === "codex" ? ["codex", "resume", s.id]
+      : null
+    if (!cmd) return
+    var dir = String(s.cwd || "") || root.home
+    Quickshell.execDetached(["uwsm-app", "--", "xdg-terminal-exec", "--dir=" + dir].concat(cmd))
   }
 
   // ---- recent files ----------------------------------------------------
@@ -392,6 +527,11 @@ Item {
     aliasFile.reload()
     recentFile.reload()
     systemRecent.reload()
+    settingsFile.reload()
+    if (root.on("agents")) {
+      agentList.command = [root.binDir + "/agent-sessions"]
+      agentList.running = true
+    }
     shortcutList.running = true
     root.opened = true
     root.setFilter("")
@@ -594,26 +734,31 @@ Item {
       return
     }
 
-    // "keys …", "menu …" and "clip …" each search one source only.
+    // "keys …", "menu …", "clip …", "ai …" and "settings" each search one
+    // source only.
     var keysRest = root.shortcutQuery(query)
     var menuRest = keysRest === null ? root.menuQuery(query) : null
     var clipRest = keysRest === null && menuRest === null ? root.clipQuery(query) : null
-    if (keysRest !== null || menuRest !== null || clipRest !== null) {
+    var agentRest = keysRest === null && menuRest === null && clipRest === null ? root.agentQuery(query) : null
+    var setRest = root.settingsQuery(query)
+    if (keysRest !== null || menuRest !== null || clipRest !== null || agentRest !== null || setRest !== null) {
       // Cancel file searches still waiting from earlier keystrokes ("ke…").
       root.fileGeneration++
       fileDebounce.stop()
       folderSearch.running = false
       fileSearch.running = false
-      rows = keysRest !== null ? root.shortcutRows(keysRest)
+      rows = setRest !== null ? root.settingsRows(setRest)
+        : keysRest !== null ? root.shortcutRows(keysRest)
         : menuRest !== null ? root.menuRows(menuRest, root.maxMenu)
-        : root.clipRows(clipRest)
+        : clipRest !== null ? root.clipRows(clipRest)
+        : root.agentRows(agentRest, root.maxAgents)
       displayModel.clear()
       for (var k = 0; k < rows.length; k++) displayModel.append(Object.assign({ window: "" }, rows[k]))
       root.clampSelection()
       return
     }
 
-    var calc = Calc.evaluate(query)
+    var calc = root.on("calc") ? Calc.evaluate(query) : null
     if (calc !== null) {
       var value = Calc.format(calc)
       rows.push({ kind: "calc", title: "= " + value, subtitle: "Enter copies the result", icon: "",
@@ -632,14 +777,18 @@ Item {
     var hasText = String(query).trim().length > 0
     if (hasText) {
       var q = String(query).trim()
-      rows = rows.concat(root.appRows(query)).concat(root.recentFileRows(words, root.maxRecentFilesTyped))
-      if (q.length >= 2) rows = rows.concat(root.menuRows(q, root.maxMenuInline))
-      rows = rows.concat(root.windowRows(words))
-      rows.push({ kind: "web", title: "Search the web for “" + q + "”", subtitle: "Opens in your default browser",
-                  icon: "", glyph: "⌕", tag: "Web", payload: "https://www.google.com/search?q=" + encodeURIComponent(q) })
+      if (root.on("apps")) rows = rows.concat(root.appRows(query))
+      if (root.on("recent")) rows = rows.concat(root.recentFileRows(words, root.maxRecentFilesTyped))
+      if (q.length >= 2 && root.on("agents")) rows = rows.concat(root.agentRows(q, root.maxAgentsInline))
+      if (q.length >= 2 && root.on("menu")) rows = rows.concat(root.menuRows(q, root.maxMenuInline))
+      if (root.on("windows")) rows = rows.concat(root.windowRows(words))
+      if (root.on("web"))
+        rows.push({ kind: "web", title: "Search the web for “" + q + "”", subtitle: "Opens in your default browser",
+                    icon: "", glyph: "⌕", tag: "Web", payload: "https://www.google.com/search?q=" + encodeURIComponent(q) })
     } else {
-      rows = rows.concat(root.windowRows(words)).concat(root.appRows(query))
-        .concat(root.recentFileRows(words, root.maxRecentFiles))
+      if (root.on("windows")) rows = rows.concat(root.windowRows(words))
+      if (root.on("apps")) rows = rows.concat(root.appRows(query))
+      if (root.on("recent")) rows = rows.concat(root.recentFileRows(words, root.maxRecentFiles))
     }
 
     displayModel.clear()
@@ -659,6 +808,7 @@ Item {
     folderSearch.running = false
     fileSearch.running = false
     var q = String(query || "").trim()
+    if (!root.on("files")) return
     if (q.length < 2 || Calc.evaluate(q) !== null || /^\d{1,2}$/.test(q)) return
     root.pendingFileQuery = q
     fileDebounce.restart()
@@ -817,6 +967,12 @@ Item {
     var title = String(row.title)
     var windowAddress = String(row.window || "")
     if (kind === "info") return
+    // Switching a source keeps the search open to flip more.
+    if (kind === "toggle") {
+      root.toggleSource(payload)
+      root.rebuild()
+      return
+    }
     var moving = root.movingWindow
     root.movingWindow = ""
     root.dismiss()
@@ -846,6 +1002,8 @@ Item {
       root.runShortcut(payload)
     } else if (kind === "clip") {
       root.useClip(payload, forceNew)
+    } else if (kind === "agent") {
+      root.resumeAgent(payload)
     } else if (kind === "calc") {
       Quickshell.execDetached(["wl-copy", "--", payload])
     }

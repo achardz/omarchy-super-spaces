@@ -16,6 +16,8 @@ Workspaces and search for [Omarchy](https://omarchy.org/), in one plugin:
 | Bar | Workspaces 1–9 as usual; 10+ folded behind **`+N`**; urgent highlight; remembers open/closed |
 | Search | Windows · apps · recent files · files · maths · workspace numbers · web |
 | Omarchy | Its menu (`menu …`), its keyboard shortcuts (`keys …`), its clipboard history (`clip …`) |
+| AI agents | Past sessions of agents logged on this PC (`ai …`), resumed in a terminal |
+| Settings | Switch each search source on or off (`settings`) |
 | Window actions | **Ctrl+W** close, **Ctrl+M** move to a workspace, straight from the search |
 | Learns | Apps you launch and files you open rise to the top |
 | Extras | `Super + N` workspace picker, a Setup › Super Spaces page in the Omarchy menu |
@@ -48,6 +50,7 @@ Open it with your key (see [Setup](#setup)) and type.
 | `12*7`, `(1+2)^3`, `= 10/4` | the result | copy it |
 | `14` | "Go to workspace 14" | switch there |
 | `lock`, `theme`… | the best few Omarchy menu entries | open / run them |
+| words from a past agent task | the 3 best matching agent sessions | resume it |
 | anything | "Search the web for …" at the end | open in your browser |
 
 **With a prefix**, only one source is searched:
@@ -57,6 +60,8 @@ Open it with your key (see [Setup](#setup)) and type.
 | `menu …` (`omarchy`, `om`) | every page and action of the Omarchy menu, in its own order, with their path | open the page or run the action, via `omarchy menu summon` |
 | `keys …` (`shortcut`, `kb`) | Omarchy's keybindings, by name or key combo | run the shortcut, via Omarchy's own keybindings script |
 | `clip …` (`cb`) | Omarchy's clipboard history | paste it; **Shift+Enter** only copies |
+| `ai …` (`agent`, `session`) | sessions of AI agents logged on this PC: omp, plus Claude Code and Codex when their logs exist; newest first, with folder and age | resume it in a terminal in its folder (`omp --resume`, `claude --resume`, `codex resume`) |
+| `settings` (`options`) | the search sources, each **On**/**Off** | flip it (the search stays open) |
 
 **Keys**
 
@@ -144,9 +149,12 @@ search (`super spaces`).
 | `~/.local/state/anz.super-spaces/recent-files.json` | files and folders you opened |
 | `~/.local/state/anz.super-spaces/bar.json` | bar open/closed |
 | `~/.config/omarchy/super-spaces/aliases.json` | your own app names (optional) |
+| `~/.config/omarchy/super-spaces/settings.json` | which search sources are on |
 
 Read only: Omarchy's menu files, `~/.local/state/omarchy/clipboard-history.json`,
-`~/.local/share/recently-used.xbel`.
+`~/.local/share/recently-used.xbel`, and the first lines of agent logs
+(`~/.omp/agent/sessions`, `~/.claude/projects`, `~/.codex/sessions`) for each
+session's title, folder and id.
 
 ## Performance
 
