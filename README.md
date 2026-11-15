@@ -12,6 +12,29 @@ Omarchy bar workspaces where workspaces past 9 fold away, like the tray drawer.
 Replaces the built-in `omarchy.workspaces` widget and keeps everything it does:
 click to switch, click the current one to cycle its layout, scroll to move.
 
+## Search (windows, apps, files, maths)
+
+Super Spaces also ships a lightweight Raycast-style search that runs inside the
+Omarchy shell you already have, so it costs a few MB instead of a separate
+launcher process.
+
+- **Windows**: every open window with its app icon, title and workspace. Type
+  an app, a title or `space 3` to filter; Enter jumps to it.
+- **Apps**: installed applications through Omarchy's own app launcher.
+- **Files**: found on demand with [`fd`](https://github.com/sharkdp/fd) while
+  you type (home folder, skipping hidden tool data, plus `~/.config`). Nothing
+  indexes in the background. Enter opens the file or folder.
+- **Maths**: `12*7`, `(1+2)^3`, `= 10/4`; Enter copies the result.
+- **Workspace number**: type `14` and pick "Go to workspace 14".
+
+Up/Down or Tab move, Enter acts, Esc clears then closes. Needs `fd` and
+`wl-copy` (`omarchy pkg add fd wl-clipboard`). Bind it in
+`~/.config/hypr/bindings.lua` on a free key, for example:
+
+```lua
+o.bind("SUPER + SEMICOLON", "Super Spaces search", "omarchy-shell shell toggle anz.super-spaces '{}'")
+```
+
 ## Install
 
 ```bash
