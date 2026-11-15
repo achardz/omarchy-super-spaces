@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "anz.super-spaces",
   "name": "Super Spaces",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "author": "anz",
   "license": "MIT",
   "description": "Workspace bar where workspaces past 9 fold behind +/-, plus a lightweight search for windows, apps, files and quick maths that runs inside the Omarchy shell",

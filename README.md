@@ -82,11 +82,21 @@ o.bind("SUPER + N", "Go to workspace number", os.getenv("HOME") .. "/.local/bin/
 o.bind("SUPER + ALT + N", "Move window to workspace number", os.getenv("HOME") .. "/.local/bin/workspace-goto --move")
 ```
 
+## Optional: Setup › Super Spaces in the Omarchy menu
+
+`extras/omarchy-menu.super-spaces.jsonc` adds a **Super Spaces** page under
+Setup with: Open Search, Go to Workspace…, Keybindings, Edit Search, Plugin
+Folder, Reset App Ranking, Restart Shell and Update Plugin. Paste its entries
+inside the `{ }` of `~/.config/omarchy/extensions/omarchy-menu.jsonc`; the
+menu reloads on save. The same entries then show up in Super Spaces search
+(`menu super`, or just `super spaces`).
+
 ## Remove
 
 ```bash
 omarchy plugin remove anz.super-spaces
 rm ~/.local/bin/workspace-goto   # if you set up the Super + N extra
+# and delete the "setup.super-spaces…" lines from omarchy-menu.jsonc if added
 ```
 
 Also delete the two `o.bind` lines if you added them.
