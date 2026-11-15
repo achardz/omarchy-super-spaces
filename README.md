@@ -46,11 +46,25 @@ launcher process.
 
 Up/Down or Tab move, Enter acts, Esc clears then closes. Needs `fd` and
 `wl-copy` (`omarchy pkg add fd wl-clipboard`). Bind it in
-`~/.config/hypr/bindings.lua` on a free key, for example:
+`~/.config/hypr/bindings.lua` on a free key. The plugin registers the Hyprland
+global shortcut `anz-super-spaces:toggle`, so the key reaches it directly with
+no process started per press:
 
 ```lua
-o.bind("SUPER + SEMICOLON", "Super Spaces search", "omarchy-shell shell toggle anz.super-spaces '{}'")
+o.bind("SUPER + SEMICOLON", "Super Spaces search", hl.dsp.global("anz-super-spaces:toggle"))
 ```
+
+For an instant appearance (Hyprland otherwise fades new layers in over
+~180-400 ms), add to `~/.config/hypr/looknfeel.lua`:
+
+```lua
+hl.layer_rule({ match = { namespace = "^anz-super-spaces-search$" }, no_anim = true })
+```
+
+Performance on a laptop (Arrow Lake, Hyprland 0.56): opening takes ~30 ms of
+which the search's own work is 4-9 ms; each keystroke re-ranks windows, apps
+and ~430 menu entries in 0-4 ms; file search via fd answers in ~10-15 ms. When
+closed it runs nothing and adds no measurable memory to the shell.
 
 ## Install
 

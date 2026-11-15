@@ -257,6 +257,21 @@ Item {
     if (root.shell && typeof root.shell.hide === "function") root.shell.hide(root.pluginId)
   }
 
+  // Hyprland global shortcut "anz-super-spaces:toggle". A key bound to
+  // hl.dsp.global("anz-super-spaces:toggle") reaches this directly, with no
+  // process started per press (omarchy-shell costs ~30 ms of bash + socat).
+  // Going through shell.toggle keeps the shell's open/closed state in step.
+  GlobalShortcut {
+    appid: "anz-super-spaces"
+    name: "toggle"
+    description: "Toggle Super Spaces search"
+    onPressed: {
+      if (root.opened) root.dismiss()
+      else if (root.shell && typeof root.shell.toggle === "function") root.shell.toggle(root.pluginId, "{}")
+      else root.open("{}")
+    }
+  }
+
   // ---- searching -------------------------------------------------------
 
   function terms(query) {
@@ -477,7 +492,9 @@ Item {
 
   Timer {
     id: fileDebounce
-    interval: 160
+    // fd answers a home folder in ~10-15 ms, so a short pause after the last
+    // keystroke is enough; longer only adds felt delay.
+    interval: 80
     onTriggered: {
       if (!root.opened || root.shortcutQuery(root.filterText) !== null) return
       folderSearch.generation = root.fileGeneration
