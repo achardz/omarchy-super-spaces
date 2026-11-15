@@ -5,8 +5,11 @@ Omarchy bar workspaces where workspaces past 9 fold away, like the tray drawer.
 ![Folded (+) and open (-) states](preview.png)
 
 - Workspaces 1–9 show as usual.
-- Workspaces 10 and up hide behind a **`+`**; click it to show them (with their
-  full number, e.g. `15`), and **`-`** to hide them again.
+- Workspaces 10 and up hide behind **`+N`** (N = how many are folded); click
+  it to show them (with their full number, e.g. `15`), and **`-`** to hide
+  them again. Open/closed is remembered across shell restarts.
+- The toggle turns the theme's urgent colour when a folded workspace has a
+  window asking for attention (e.g. a terminal bell).
 - The workspace you are on always stays visible, even when folded.
 
 Replaces the built-in `omarchy.workspaces` widget and keeps everything it does:
@@ -40,9 +43,18 @@ launcher process.
   as they would there, and actions with a `when`/`disabled` condition open
   their parent page so Omarchy decides what is available. Entries come from
   Omarchy's menu file plus `~/.config/omarchy/extensions/omarchy-menu.jsonc`.
+- **Clipboard**: start with `clip` (or `cb`) to search Omarchy's clipboard
+  history; Enter pastes into the focused window, Shift+Enter only copies. It
+  goes through Omarchy's own clipboard helpers.
+- **Window actions**: on a window (or a running app) press **Ctrl+W** to close
+  it (the search stays open) or **Ctrl+M** to move it: type a workspace number,
+  Enter. Esc cancels.
 - **Web**: every search ends with "Search the web for …" in your default browser.
 - **Other names**: `chrome`/`browser` finds your browser, `files` your file
   manager, `code` your editor, `terminal` your terminal (installed apps only).
+  Add your own in `~/.config/omarchy/super-spaces/aliases.json` as
+  `{ "<desktop id>": "word word" }` (see `extras/aliases.example.json`); they
+  win over the built-in ones and apply the next time the search opens.
 
 Up/Down or Tab move, Enter acts, Esc clears then closes. Needs `fd` and
 `wl-copy` (`omarchy pkg add fd wl-clipboard`). Bind it in
@@ -51,7 +63,7 @@ global shortcut `anz-super-spaces:toggle`, so the key reaches it directly with
 no process started per press:
 
 ```lua
-o.bind("SUPER + SEMICOLON", "Super Spaces search", hl.dsp.global("anz-super-spaces:toggle"))
+o.bind("SUPER + SPACE", "Super Spaces search", hl.dsp.global("anz-super-spaces:toggle"))
 ```
 
 For an instant appearance (Hyprland otherwise fades new layers in over

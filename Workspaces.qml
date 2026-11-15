@@ -101,7 +101,24 @@ BarWidget {
 
   // Workspaces past 9 (own 10 and up, plus any visiting ones) fold behind a
   // + / - toggle, like the tray drawer. The one being shown always stays visible.
+  // Open/closed survives shell restarts in the plugin's state file.
   property bool extrasOpen: false
+  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/anz.super-spaces"
+
+  FileView {
+    id: barState
+    path: root.stateDir + "/bar.json"
+    printErrors: false
+    atomicWrites: true
+    onLoaded: {
+      try { root.extrasOpen = JSON.parse(text()).extrasOpen === true } catch (e) {}
+    }
+  }
+
+  function setExtrasOpen(open) {
+    root.extrasOpen = open
+    barState.setText(JSON.stringify({ extrasOpen: open }))
+  }
 
   function isExtra(id) {
     return root.blockOf(id) !== root.block || root.slotOf(id) > 9
@@ -118,6 +135,39 @@ BarWidget {
   function shownExtraIds() {
     var active = root.activeWorkspaceId()
     return root.allExtraIds().filter(function(id) { return root.extrasOpen || id === active })
+  }
+
+  // Folded away right now: the count on "+N" and where urgency is hidden.
+  function hiddenExtraIds() {
+    var shown = root.shownExtraIds()
+    return root.allExtraIds().filter(function(id) { return shown.indexOf(id) === -1 })
+  }
+
+  // Windows asking for attention, by address (Hyprland's "urgent" event);
+  // focusing or closing one clears it.
+  property var urgentAddresses: ({})
+
+  function setUrgent(address, on) {
+    var a = String(address || "").replace(/^0x/, "")
+    if (!a || (root.urgentAddresses[a] === true) === on) return
+    var next = Object.assign({}, root.urgentAddresses)
+    if (on) next[a] = true
+    else delete next[a]
+    root.urgentAddresses = next
+  }
+
+  // True when a window wanting attention sits on a folded workspace.
+  readonly property bool hiddenUrgent: {
+    var hidden = root.hiddenExtraIds()
+    if (hidden.length === 0) return false
+    var values = Hyprland.toplevels.values || []
+    for (var i = 0; i < values.length; i++) {
+      var t = values[i]
+      var a = String(t.address || "").replace(/^0x/, "")
+      var ws = t.workspace ? t.workspace.id : -1
+      if (root.urgentAddresses[a] && hidden.indexOf(ws) !== -1) return true
+    }
+    return false
   }
 
   function dispatch(expression) {
@@ -206,7 +256,10 @@ BarWidget {
     root.bar.run(command)
   }
 
-  Component.onCompleted: refresh()
+  Component.onCompleted: {
+    refresh()
+    Quickshell.execDetached(["mkdir", "-p", root.stateDir])
+  }
   onMonitorChanged: root.showActiveMode()
 
   Connections {
@@ -230,6 +283,9 @@ BarWidget {
         Hyprland.refreshMonitors()
         Hyprland.refreshWorkspaces()
       }
+      var data = event ? String(event.data || "") : ""
+      if (name === "urgent") root.setUrgent(data, true)
+      else if (name === "activewindowv2" || name === "closewindow") root.setUrgent(data, false)
     }
   }
 
@@ -304,17 +360,25 @@ BarWidget {
       WorkspaceButton {}
     }
 
-    // Drawer toggle for workspaces past 9 (+ shows, - hides); only there when some exist.
+    // Drawer toggle for workspaces past 9: "+N" counts what is folded away,
+    // "-" hides them again. It takes the theme's urgent colour when a folded
+    // workspace has a window asking for attention. Only there when some exist.
     WidgetButton {
+      readonly property int hiddenCount: root.hiddenExtraIds().length
       visible: root.allExtraIds().length > 0
       bar: root.bar
-      text: root.extrasOpen ? "-" : "+"
-      opacity: 0.7
+      text: root.extrasOpen ? "-" : (hiddenCount > 0 ? "+" + hiddenCount : "+")
+      active: root.hiddenUrgent
+      opacity: root.hiddenUrgent ? 1 : 0.7
+      tooltipText: root.extrasOpen
+        ? "Hide workspaces past 9"
+        : hiddenCount + (hiddenCount === 1 ? " folded workspace" : " folded workspaces")
+          + (root.hiddenUrgent ? " (one needs attention)" : "")
       horizontalMargin: 4
       verticalPadding: 6
-      fixedWidth: root.vertical ? root.barSize : Style.space(14)
+      fixedWidth: root.vertical ? root.barSize : Style.space(!root.extrasOpen && hiddenCount > 0 ? 22 : 14)
       fixedHeight: root.barSize
-      onPressed: function() { root.extrasOpen = !root.extrasOpen }
+      onPressed: function() { root.setExtrasOpen(!root.extrasOpen) }
       onWheelMoved: function(delta) { root.scrollWorkspaces(delta) }
     }
 

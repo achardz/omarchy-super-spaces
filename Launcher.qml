@@ -116,6 +116,73 @@ Item {
   // Each entry keeps the exact line Omarchy prints, because running one goes
   // back through Omarchy's own script (see runShortcut).
   readonly property int maxShortcuts: 60
+
+  // ---- clipboard history ("clip …") -----------------------------------
+  // Omarchy's own history (~/.local/state/omarchy/clipboard-history.json,
+  // written by its clipboard manager). Picking an entry goes back through
+  // Omarchy's helper with its index, exactly like that manager does.
+  readonly property int maxClips: 50
+  property var clips: []
+
+  FileView {
+    path: root.home + "/.local/state/omarchy/clipboard-history.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text())
+        root.clips = Array.isArray(parsed) ? parsed : []
+      } catch (e) {
+        root.clips = []
+      }
+    }
+    onLoadFailed: root.clips = []
+  }
+
+  // "clip", "clipboard" or "cb", optionally followed by a search.
+  function clipQuery(query) {
+    var m = /^\s*(clip|clipboard|cb)(?:\s+(.*))?$/i.exec(String(query || ""))
+    return m ? (m[2] || "") : null
+  }
+
+  function clipRows(rest) {
+    var words = root.terms(rest)
+    var out = []
+    for (var i = 0; i < root.clips.length && out.length < root.maxClips; i++) {
+      var c = root.clips[i]
+      var isImage = c && c.type === "image"
+      var text = isImage ? String(c.path || "image") : String((c && c.text) || "")
+      if (!text) continue
+      if (words.length > 0 && !root.matchesAll(text, words)) continue
+      var flat = text.replace(/\s+/g, " ").trim()
+      var lines = text.split("\n").length
+      out.push({ kind: "clip", title: flat.length > 90 ? flat.slice(0, 90) + "…" : flat,
+                 subtitle: (isImage ? "Image" : (lines > 1 ? lines + " lines" : text.length + " characters"))
+                   + "  ·  Enter pastes, Shift+Enter copies",
+                 icon: "", glyph: isImage ? "▣" : "❐", tag: "Clip", payload: String(i) })
+    }
+    if (out.length === 0)
+      out.push({ kind: "info", title: root.clips.length ? "No matching clips" : "Clipboard history is empty",
+                 subtitle: "", icon: "", glyph: "❐", tag: "", payload: "" })
+    return out
+  }
+
+  function useClip(index, copyOnly) {
+    if (!/^\d+$/.test(index)) return
+    var c = root.clips[Number(index)]
+    var omarchy = Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy"
+    if (c && c.type === "image" && c.path) {
+      Quickshell.execDetached(copyOnly
+        ? [omarchy + "/bin/omarchy-clipboard-paste-file", "--copy-only", String(c.mime || "image/png"), String(c.path)]
+        : [omarchy + "/bin/omarchy-clipboard-paste-file", String(c.mime || "image/png"), String(c.path)])
+    } else {
+      Quickshell.execDetached(copyOnly
+        ? [omarchy + "/bin/omarchy-clipboard-paste-text", "--copy-only", "--history-index", index]
+        : [omarchy + "/bin/omarchy-clipboard-paste-text", "--shift-insert", "--history-index", index])
+    }
+  }
+
   property var shortcuts: []
 
   Process {
@@ -240,6 +307,9 @@ Item {
     Hyprland.refreshWorkspaces()
     if (root.appLibrary) root.appLibrary.refreshIcons()
     usageFile.reload()
+    // A file created after the shell started has no watch yet; reading it on
+    // each open picks it up (and edits) without a shell restart.
+    aliasFile.reload()
     shortcutList.running = true
     root.opened = true
     root.setFilter("")
@@ -248,6 +318,7 @@ Item {
 
   function close() {
     root.opened = false
+    root.movingWindow = ""
     folderSearch.running = false
     fileSearch.running = false
   }
@@ -346,7 +417,7 @@ Item {
   // Other names people type for an app, keyed by desktop id. Only apps that
   // are installed show up (DesktopEntries.byId is null otherwise). Earlier
   // entries win ties, so Zen, the default browser here, leads for "chrome".
-  readonly property var aliases: [
+  readonly property var defaultAliases: [
     { id: "zen", words: "chrome google chrome firefox safari browser web internet" },
     { id: "chromium", words: "chrome google chrome browser" },
     { id: "com.thisisgm.flea", words: "files finder explorer file manager folders" },
@@ -355,6 +426,32 @@ Item {
     { id: "com.mitchellh.ghostty", words: "terminal console shell iterm" },
     { id: "omacalc", words: "calculator calc" }
   ]
+
+  // Your own names, from ~/.config/omarchy/super-spaces/aliases.json:
+  // { "<desktop id>": "word word …" }. They come first, so they win ties.
+  property var userAliases: []
+  readonly property var aliases: root.userAliases.concat(root.defaultAliases)
+
+  FileView {
+    id: aliasFile
+    path: root.home + "/.config/omarchy/super-spaces/aliases.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      var out = []
+      try {
+        var parsed = JSON.parse(text())
+        for (var id in parsed) {
+          if (typeof parsed[id] === "string" && parsed[id].trim()) out.push({ id: id, words: parsed[id].toLowerCase() })
+        }
+      } catch (e) {
+        console.warn("Super Spaces: ignoring aliases.json, it is not valid JSON")
+      }
+      root.userAliases = out
+    }
+    onLoadFailed: root.userAliases = []
+  }
 
   function aliasMatches(words) {
     var out = []
@@ -402,16 +499,32 @@ Item {
     var words = root.terms(query)
     var rows = []
 
-    // "keys …" searches Omarchy's shortcuts only, "menu …" its menu only.
+    // Ctrl+M on a window: the list becomes target workspaces.
+    if (root.movingWindow) {
+      root.fileGeneration++
+      fileDebounce.stop()
+      folderSearch.running = false
+      fileSearch.running = false
+      rows = root.moveRows(query)
+      displayModel.clear()
+      for (var mv = 0; mv < rows.length; mv++) displayModel.append(Object.assign({ window: "" }, rows[mv]))
+      root.clampSelection()
+      return
+    }
+
+    // "keys …", "menu …" and "clip …" each search one source only.
     var keysRest = root.shortcutQuery(query)
     var menuRest = keysRest === null ? root.menuQuery(query) : null
-    if (keysRest !== null || menuRest !== null) {
+    var clipRest = keysRest === null && menuRest === null ? root.clipQuery(query) : null
+    if (keysRest !== null || menuRest !== null || clipRest !== null) {
       // Cancel file searches still waiting from earlier keystrokes ("ke…").
       root.fileGeneration++
       fileDebounce.stop()
       folderSearch.running = false
       fileSearch.running = false
-      rows = keysRest !== null ? root.shortcutRows(keysRest) : root.menuRows(menuRest, root.maxMenu)
+      rows = keysRest !== null ? root.shortcutRows(keysRest)
+        : menuRest !== null ? root.menuRows(menuRest, root.maxMenu)
+        : root.clipRows(clipRest)
       displayModel.clear()
       for (var k = 0; k < rows.length; k++) displayModel.append(Object.assign({ window: "" }, rows[k]))
       root.clampSelection()
@@ -555,7 +668,63 @@ Item {
     if (/^0x[0-9a-fA-F]+$/.test(addr)) root.dispatch("hl.dsp.focus({ window = \"address:" + addr + "\" })")
   }
 
-  // forceNew (Shift+Enter) launches another instance even if the app is open.
+  // ---- window actions on the selected row ------------------------------
+  // A window row, or an app row whose app is open, has a window to act on.
+  function selectedWindow() {
+    if (root.selectedIndex < 0 || root.selectedIndex >= displayModel.count) return ""
+    var row = displayModel.get(root.selectedIndex)
+    var addr = row.kind === "window" ? String(row.payload) : String(row.window || "")
+    if (!addr) return ""
+    addr = addr.indexOf("0x") === 0 ? addr : "0x" + addr
+    return /^0x[0-9a-fA-F]+$/.test(addr) ? addr : ""
+  }
+
+  // Ctrl+W: close the window, keep the search open so you can close more.
+  function closeSelectedWindow() {
+    var addr = root.selectedWindow()
+    if (!addr) return
+    root.dispatch("hl.dsp.window.close({ window = \"address:" + addr + "\" })")
+    windowRefresh.restart()
+  }
+
+  Timer {
+    id: windowRefresh
+    interval: 250
+    onTriggered: {
+      Hyprland.refreshToplevels()
+      if (root.opened) root.rebuild()
+    }
+  }
+
+  // Ctrl+M: pick a target workspace for the window, by number.
+  property string movingWindow: ""
+
+  function startMove() {
+    var addr = root.selectedWindow()
+    if (!addr) return
+    root.movingWindow = addr
+    root.setFilter("")
+  }
+
+  function moveRows(rest) {
+    var out = []
+    var n = /^\s*(\d{1,2})\s*$/.exec(rest)
+    if (n && Number(n[1]) >= 1)
+      out.push({ kind: "move", title: "Move to workspace " + n[1], subtitle: "Enter moves the window there; Esc cancels",
+                 icon: "", glyph: "→", tag: n[1], payload: n[1] })
+    var ids = (Hyprland.workspaces.values || []).map(function(w) { return w.id })
+      .filter(function(id) { return id > 0 }).sort(function(a, b) { return a - b })
+    for (var i = 0; i < ids.length; i++) {
+      if (n && String(ids[i]) === n[1]) continue
+      if (rest.trim() && String(ids[i]).indexOf(rest.trim()) !== 0) continue
+      out.push({ kind: "move", title: "Move to workspace " + ids[i], subtitle: "Existing workspace",
+                 icon: "", glyph: "→", tag: String(ids[i]), payload: String(ids[i]) })
+    }
+    return out
+  }
+
+  // forceNew (Shift+Enter) launches another instance even if the app is open,
+  // and copies a clip instead of pasting it.
   function activate(index, forceNew) {
     if (index < 0 || index >= displayModel.count) return
     var row = displayModel.get(index)
@@ -563,9 +732,15 @@ Item {
     var payload = String(row.payload)
     var title = String(row.title)
     var windowAddress = String(row.window || "")
+    if (kind === "info") return
+    var moving = root.movingWindow
+    root.movingWindow = ""
     root.dismiss()
 
-    if (kind === "window") {
+    if (kind === "move") {
+      if (moving && /^\d{1,2}$/.test(payload))
+        root.dispatch("hl.dsp.window.move({ window = \"address:" + moving + "\", workspace = \"" + payload + "\", follow = false })")
+    } else if (kind === "window") {
       root.focusWindow(payload)
     } else if (kind === "workspace") {
       if (/^\d{1,2}$/.test(payload)) root.dispatch("hl.dsp.focus({ workspace = \"" + payload + "\" })")
@@ -584,6 +759,8 @@ Item {
       else Quickshell.execDetached(["omarchy-menu"])
     } else if (kind === "key") {
       root.runShortcut(payload)
+    } else if (kind === "clip") {
+      root.useClip(payload, forceNew)
     } else if (kind === "calc") {
       Quickshell.execDetached(["wl-copy", "--", payload])
     }
@@ -621,11 +798,18 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           if (event.key === Qt.Key_Escape) {
-            if (root.filterText) root.setFilter("")
+            if (root.movingWindow) { root.movingWindow = ""; root.setFilter("") }
+            else if (root.filterText) root.setFilter("")
             else root.dismiss()
             event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
+            event.accepted = true
+          } else if (event.key === Qt.Key_W && event.modifiers === Qt.ControlModifier && !root.movingWindow) {
+            root.closeSelectedWindow()
+            event.accepted = true
+          } else if (event.key === Qt.Key_M && event.modifiers === Qt.ControlModifier && !root.movingWindow) {
+            root.startMove()
             event.accepted = true
           } else if (event.key === Qt.Key_Up || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier)) || event.key === Qt.Key_Backtab) {
             root.move(-1)
@@ -660,7 +844,9 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || "Search windows, apps, files, maths — or “keys …” for shortcuts"
+            text: root.filterText || (root.movingWindow
+              ? "Move window to workspace… (type a number)"
+              : "Search windows, apps, files, maths — or “keys”, “menu”, “clip” …")
             color: root.foreground
             opacity: root.filterText ? 1 : 0.58
             font.family: root.fontFamily
