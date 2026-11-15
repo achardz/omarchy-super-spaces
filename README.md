@@ -4,6 +4,8 @@ A tidier workspace bar and a Raycast-style search for [Omarchy](https://omarchy.
 
 ![Folded (+) and open (-) states](preview.png)
 
+![Search: apps, maths, the Omarchy menu and shortcuts](demo.gif)
+
 - **Bar:** workspaces above 9 fold away behind `+N`, so the bar stays short.
 - **Search (Super + Space):** windows, apps, files, quick maths, the Omarchy
   menu, shortcuts, clipboard history and your AI agents, all in one box.
