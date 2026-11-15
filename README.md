@@ -24,6 +24,8 @@ launcher process.
 - **Windows**: every open window with its app icon, title and workspace. Type
   an app, a title or `space 3` to filter; Enter jumps to it.
 - **Apps**: installed applications through Omarchy's own app launcher.
+- **Recent files**: files and folders you open from the search come first,
+  then the desktop's shared recent list; up to 5 when empty, 3 when typing.
 - **Files**: found on demand with [`fd`](https://github.com/sharkdp/fd) while
   you type (home folder, skipping hidden tool data, plus `~/.config`). Nothing
   indexes in the background. Enter opens the file or folder.

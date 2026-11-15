@@ -32,6 +32,8 @@ Item {
   readonly property int maxWindows: 8
   readonly property int maxApps: 6
   readonly property int maxRecentApps: 5
+  readonly property int maxRecentFiles: 5
+  readonly property int maxRecentFilesTyped: 3
   readonly property int maxFiles: 15
 
   // ---- Omarchy menu entries ("menu …", and the best few in any search) --
@@ -272,6 +274,84 @@ Item {
     usageFile.setText(JSON.stringify(next))
   }
 
+  // ---- recent files ----------------------------------------------------
+  // Our own list (files and folders opened from this search, newest first)
+  // merged with the desktop's shared list, which other apps write to.
+  property var recentOwn: []
+  property var recentSystem: []
+
+  FileView {
+    id: recentFile
+    path: root.stateDir + "/recent-files.json"
+    printErrors: false
+    atomicWrites: true
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text())
+        root.recentOwn = Array.isArray(parsed) ? parsed : []
+      } catch (e) {
+        root.recentOwn = []
+      }
+    }
+    onLoadFailed: root.recentOwn = []
+  }
+
+  // ~/.local/share/recently-used.xbel: <bookmark href="file://…" modified="…">.
+  FileView {
+    id: systemRecent
+    path: root.home + "/.local/share/recently-used.xbel"
+    printErrors: false
+    onLoaded: {
+      var out = []
+      var re = /<bookmark\s[^>]*href="file:\/\/([^"]+)"[^>]*?modified="([^"]+)"/g
+      var m
+      var text = String(systemRecent.text())
+      while ((m = re.exec(text)) !== null) {
+        try { out.push({ path: decodeURIComponent(m[1]), last: Date.parse(m[2]) || 0 }) } catch (e) {}
+      }
+      out.sort(function(a, b) { return b.last - a.last })
+      root.recentSystem = out.slice(0, 200)
+    }
+    onLoadFailed: root.recentSystem = []
+  }
+
+  // Both lists load a moment after the search opens; redraw an empty search
+  // when they arrive so recent files show up without typing.
+  onRecentOwnChanged: if (root.opened && !root.filterText.trim() && !root.movingWindow) root.rebuild()
+  onRecentSystemChanged: if (root.opened && !root.filterText.trim() && !root.movingWindow) root.rebuild()
+
+  function recordFile(path, isDir) {
+    if (!path) return
+    var next = root.recentOwn.filter(function(r) { return r.path !== path })
+    next.unshift({ path: path, dir: !!isDir, last: Date.now() })
+    root.recentOwn = next.slice(0, 100)
+    recentFile.setText(JSON.stringify(root.recentOwn))
+  }
+
+  // Paths already listed as recent, so fd results don't repeat them.
+  property var shownRecentPaths: ({})
+
+  function recentFileRows(words, limit) {
+    var seen = ({})
+    var out = []
+    var merged = root.recentOwn.concat(root.recentSystem)
+    for (var i = 0; i < merged.length && out.length < limit; i++) {
+      var r = merged[i]
+      var path = String(r.path || "").replace(/\/$/, "")
+      if (!path || seen[path]) continue
+      seen[path] = true
+      if (words.length > 0 && !root.matchesAll(path, words)) continue
+      var name = path.slice(path.lastIndexOf("/") + 1) || path
+      var shown = path.indexOf(root.home) === 0 ? "~" + path.slice(root.home.length) : path
+      out.push({ kind: "file", title: name, subtitle: shown, icon: "",
+                 glyph: r.dir ? "▸" : "·", tag: "Recent", payload: path })
+    }
+    var shownMap = ({})
+    for (var j = 0; j < out.length; j++) shownMap[out[j].payload] = true
+    root.shownRecentPaths = shownMap
+    return out
+  }
+
   // Capped well under the gap between Omarchy's match tiers (prefix, contains,
   // keyword, acronym), so usage reorders apps within a tier but never lets a
   // weak match beat a strong one.
@@ -310,6 +390,8 @@ Item {
     // A file created after the shell started has no watch yet; reading it on
     // each open picks it up (and edits) without a shell restart.
     aliasFile.reload()
+    recentFile.reload()
+    systemRecent.reload()
     shortcutList.running = true
     root.opened = true
     root.setFilter("")
@@ -550,13 +632,14 @@ Item {
     var hasText = String(query).trim().length > 0
     if (hasText) {
       var q = String(query).trim()
-      rows = rows.concat(root.appRows(query))
+      rows = rows.concat(root.appRows(query)).concat(root.recentFileRows(words, root.maxRecentFilesTyped))
       if (q.length >= 2) rows = rows.concat(root.menuRows(q, root.maxMenuInline))
       rows = rows.concat(root.windowRows(words))
       rows.push({ kind: "web", title: "Search the web for “" + q + "”", subtitle: "Opens in your default browser",
                   icon: "", glyph: "⌕", tag: "Web", payload: "https://www.google.com/search?q=" + encodeURIComponent(q) })
     } else {
       rows = rows.concat(root.windowRows(words)).concat(root.appRows(query))
+        .concat(root.recentFileRows(words, root.maxRecentFiles))
     }
 
     displayModel.clear()
@@ -595,6 +678,7 @@ Item {
     var lines = String(text).split("\n").filter(function(l) { return l.length > 0 })
     for (var i = 0; i < lines.length; i++) {
       var path = lines[i].replace(/\/$/, "")
+      if (root.shownRecentPaths[path]) continue
       var name = path.slice(path.lastIndexOf("/") + 1)
       var shown = path.indexOf(root.home) === 0 ? "~" + path.slice(root.home.length) : path
       displayModel.append({ kind: "file", title: name, subtitle: shown, icon: "",
@@ -750,6 +834,7 @@ Item {
       if (windowAddress && !forceNew) root.focusWindow(windowAddress)
       else if (root.appLibrary) root.appLibrary.launch(payload, title)
     } else if (kind === "file") {
+      root.recordFile(payload, row.glyph === "▸")
       Quickshell.execDetached(["xdg-open", payload])
     } else if (kind === "web") {
       if (payload.indexOf("https://www.google.com/search?q=") === 0) Quickshell.execDetached(["xdg-open", payload])
