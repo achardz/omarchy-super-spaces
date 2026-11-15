@@ -188,8 +188,34 @@ Item {
              payload: String(entry.id || ""), window: running }
   }
 
+  // Other names people type for an app, keyed by desktop id. Only apps that
+  // are installed show up (DesktopEntries.byId is null otherwise). Earlier
+  // entries win ties, so Zen, the default browser here, leads for "chrome".
+  readonly property var aliases: [
+    { id: "zen", words: "chrome google chrome firefox safari browser web internet" },
+    { id: "chromium", words: "chrome google chrome browser" },
+    { id: "com.thisisgm.flea", words: "files finder explorer file manager folders" },
+    { id: "org.gnome.Nautilus", words: "files finder explorer file manager" },
+    { id: "dev.zed.Zed", words: "code vscode visual studio editor ide" },
+    { id: "com.mitchellh.ghostty", words: "terminal console shell iterm" },
+    { id: "omacalc", words: "calculator calc" }
+  ]
+
+  function aliasMatches(words) {
+    var out = []
+    if (words.length === 0) return out
+    for (var a = 0; a < root.aliases.length; a++) {
+      if (!root.matchesAll(root.aliases[a].words, words)) continue
+      var entry = DesktopEntries.byId(root.aliases[a].id)
+      // Scored like a keyword hit (Omarchy's 6000 tier) minus list order.
+      if (entry && !entry.noDisplay) out.push({ entry: entry, score: 6500 - a })
+    }
+    return out
+  }
+
   // Typed: Omarchy's fuzzy app ranking (sortedEntries returns {entry, score}
-  // rows), nudged by how often you launch each app. Empty: your most-used apps.
+  // rows) merged with alias hits, nudged by how often you launch each app.
+  // Empty: your most-used apps.
   function appRows(query) {
     if (!root.appLibrary) return []
     var out = []
@@ -203,9 +229,14 @@ Item {
       }
       return out
     }
-    var ranked = (root.appLibrary.sortedEntries(query) || []).map(function(row) {
-      return { entry: row.entry, score: row.score + root.usageBoost(String(row.entry.id || "")) }
-    })
+    var best = ({})
+    var candidates = (root.appLibrary.sortedEntries(query) || []).concat(root.aliasMatches(root.terms(query)))
+    for (var c = 0; c < candidates.length; c++) {
+      var id = String(candidates[c].entry.id || "")
+      var score = candidates[c].score + root.usageBoost(id)
+      if (!best[id] || score > best[id].score) best[id] = { entry: candidates[c].entry, score: score }
+    }
+    var ranked = Object.keys(best).map(function(k) { return best[k] })
     ranked.sort(function(a, b) { return b.score - a.score })
     for (var i = 0; i < ranked.length && out.length < root.maxApps; i++) out.push(root.appRow(ranked[i].entry, false))
     return out
@@ -229,12 +260,18 @@ Item {
                   icon: "", glyph: "#", tag: n[1], payload: n[1] })
     }
 
-    // Typing puts apps first (like Raycast); with no text, open windows lead
+    // Typing puts apps first (like Raycast), then windows and a web search
+    // (files arrive below as fd answers); with no text, open windows lead
     // and your most-used apps follow.
     var hasText = String(query).trim().length > 0
-    rows = hasText
-      ? rows.concat(root.appRows(query)).concat(root.windowRows(words))
-      : rows.concat(root.windowRows(words)).concat(root.appRows(query))
+    if (hasText) {
+      var q = String(query).trim()
+      rows = rows.concat(root.appRows(query)).concat(root.windowRows(words))
+      rows.push({ kind: "web", title: "Search the web for “" + q + "”", subtitle: "Opens in your default browser",
+                  icon: "", glyph: "⌕", tag: "Web", payload: "https://www.google.com/search?q=" + encodeURIComponent(q) })
+    } else {
+      rows = rows.concat(root.windowRows(words)).concat(root.appRows(query))
+    }
 
     displayModel.clear()
     // Every row carries the same roles; only running-app rows fill `window`.
@@ -364,6 +401,8 @@ Item {
       else if (root.appLibrary) root.appLibrary.launch(payload, title)
     } else if (kind === "file") {
       Quickshell.execDetached(["xdg-open", payload])
+    } else if (kind === "web") {
+      if (payload.indexOf("https://www.google.com/search?q=") === 0) Quickshell.execDetached(["xdg-open", payload])
     } else if (kind === "calc") {
       Quickshell.execDetached(["wl-copy", "--", payload])
     }
