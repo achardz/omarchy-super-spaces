@@ -16,7 +16,7 @@ Workspaces and search for [Omarchy](https://omarchy.org/), in one plugin:
 | Bar | Workspaces 1–9 as usual; 10+ folded behind **`+N`**; urgent highlight; remembers open/closed |
 | Search | Windows · apps · recent files · files · maths · workspace numbers · web |
 | Omarchy | Its menu (`menu …`), its keyboard shortcuts (`keys …`), its clipboard history (`clip …`) |
-| AI agents | Past sessions of agents logged on this PC (`ai …`), resumed in a terminal |
+| AI agents | Past sessions of agents logged on this PC (`ai …`), resumed in a terminal; ask an agent to search the web (`ask …`) |
 | Settings | Switch each search source on or off (`settings`) |
 | Window actions | **Ctrl+W** close, **Ctrl+M** move to a workspace, straight from the search |
 | Learns | Apps you launch and files you open rise to the top |
@@ -52,6 +52,7 @@ Open it with your key (see [Setup](#setup)) and type.
 | `lock`, `theme`… | the best few Omarchy menu entries | open / run them |
 | words from a past agent task | the 3 best matching agent sessions | resume it |
 | anything | "Search the web for …" at the end | open in your browser |
+| anything (3+ letters) | "Ask AI: …" last | omp searches the web and answers, in a terminal |
 
 **With a prefix**, only one source is searched:
 
@@ -61,6 +62,7 @@ Open it with your key (see [Setup](#setup)) and type.
 | `keys …` (`shortcut`, `kb`) | Omarchy's keybindings, by name or key combo | run the shortcut, via Omarchy's own keybindings script |
 | `clip …` (`cb`) | Omarchy's clipboard history | paste it; **Shift+Enter** only copies |
 | `ai …` (`agent`, `session`) | sessions of AI agents logged on this PC: omp, plus Claude Code and Codex when their logs exist; newest first, with folder and age | resume it in a terminal in its folder (`omp --resume`, `claude --resume`, `codex resume`) |
+| `ask …` (`?`) | — (one row with your question) | open omp in a terminal with the question; it uses its web search and cites sources, and stays open for follow-ups |
 | `settings` (`options`) | the search sources, each **On**/**Off** | flip it (the search stays open) |
 
 **Keys**

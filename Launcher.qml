@@ -285,7 +285,8 @@ Item {
     { key: "agents", label: "AI agent sessions" },
     { key: "menu", label: "Omarchy menu in normal results" },
     { key: "calc", label: "Calculator" },
-    { key: "web", label: "Web search row" }
+    { key: "web", label: "Web search row" },
+    { key: "ask", label: "Ask AI agent (web search)" }
   ]
   property var sourcesOff: ({})
   readonly property string settingsPath: root.home + "/.config/omarchy/super-spaces/settings.json"
@@ -363,6 +364,35 @@ Item {
         if (root.opened && !root.movingWindow) root.rebuild()
       }
     }
+  }
+
+  // ---- ask an AI agent to search the web ("ask …") ---------------------
+  // Opens omp in a terminal with the question as its first prompt; omp
+  // uses its own web_search tool and keeps the chat for follow-ups. The
+  // question goes straight into argv, never through a shell.
+  // "ask <question>" or "? <question>"; "asks…"/"askew" stay normal searches.
+  function askQuery(query) {
+    var m = /^\s*(?:ask(?:\s+|$)|\?\s*)(.*)$/i.exec(String(query || ""))
+    return m ? m[1] : null
+  }
+
+  function askRow(q) {
+    return { kind: "ask", title: "Ask AI: “" + q + "”", subtitle: "omp searches the web and answers, in a terminal",
+             icon: "", glyph: "✦", tag: "Ask AI", payload: q }
+  }
+
+  function askRows(rest) {
+    var q = String(rest || "").trim()
+    if (!q) return [{ kind: "info", title: "Type a question after “ask”", subtitle: "e.g. ask latest hyprland release notes",
+                      icon: "", glyph: "✦", tag: "", payload: "" }]
+    return [root.askRow(q)]
+  }
+
+  function askAgent(q) {
+    q = String(q || "").trim()
+    if (!q) return
+    Quickshell.execDetached(["uwsm-app", "--", "xdg-terminal-exec", "--dir=" + root.home,
+      "omp", "Search the web and answer briefly with source links: " + q])
   }
 
   function agentQuery(query) {
@@ -741,7 +771,8 @@ Item {
     var clipRest = keysRest === null && menuRest === null ? root.clipQuery(query) : null
     var agentRest = keysRest === null && menuRest === null && clipRest === null ? root.agentQuery(query) : null
     var setRest = root.settingsQuery(query)
-    if (keysRest !== null || menuRest !== null || clipRest !== null || agentRest !== null || setRest !== null) {
+    var askRest = root.on("ask") ? root.askQuery(query) : null
+    if (keysRest !== null || menuRest !== null || clipRest !== null || agentRest !== null || setRest !== null || askRest !== null) {
       // Cancel file searches still waiting from earlier keystrokes ("ke…").
       root.fileGeneration++
       fileDebounce.stop()
@@ -751,7 +782,8 @@ Item {
         : keysRest !== null ? root.shortcutRows(keysRest)
         : menuRest !== null ? root.menuRows(menuRest, root.maxMenu)
         : clipRest !== null ? root.clipRows(clipRest)
-        : root.agentRows(agentRest, root.maxAgents)
+        : agentRest !== null ? root.agentRows(agentRest, root.maxAgents)
+        : root.askRows(askRest)
       displayModel.clear()
       for (var k = 0; k < rows.length; k++) displayModel.append(Object.assign({ window: "" }, rows[k]))
       root.clampSelection()
@@ -785,6 +817,7 @@ Item {
       if (root.on("web"))
         rows.push({ kind: "web", title: "Search the web for “" + q + "”", subtitle: "Opens in your default browser",
                     icon: "", glyph: "⌕", tag: "Web", payload: "https://www.google.com/search?q=" + encodeURIComponent(q) })
+      if (root.on("ask") && q.length >= 3) rows.push(root.askRow(q))
     } else {
       if (root.on("windows")) rows = rows.concat(root.windowRows(words))
       if (root.on("apps")) rows = rows.concat(root.appRows(query))
@@ -1002,6 +1035,8 @@ Item {
       root.runShortcut(payload)
     } else if (kind === "clip") {
       root.useClip(payload, forceNew)
+    } else if (kind === "ask") {
+      root.askAgent(payload)
     } else if (kind === "agent") {
       root.resumeAgent(payload)
     } else if (kind === "calc") {
