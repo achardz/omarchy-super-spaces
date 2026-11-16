@@ -34,7 +34,8 @@ Item {
   property real monY: 0
 
   readonly property int duration: 260
-  readonly property color backdrop: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.94)
+  // Solid while open: the desktop doesn't show through behind the thumbnails.
+  readonly property color backdrop: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
   readonly property color text: Commons.Color.foreground
   readonly property color accent: Commons.Color.accent
 
@@ -264,6 +265,9 @@ Item {
             visible: hover.containsMouse && ov.spread
           }
 
+          // A see-through (glassy) window would show the backdrop through
+          // its copy; a solid base keeps each thumbnail opaque.
+          Rectangle { anchors.fill: parent; color: ov.backdrop }
           ScreencopyView {
             anchors.fill: parent
             captureSource: thumb.modelData.toplevel.wayland
@@ -340,15 +344,19 @@ Item {
 
               Repeater {
                 model: cell.modelData.windows
-                delegate: ScreencopyView {
+                delegate: Item {
                   required property var modelData
                   x: modelData.x * stage2.scale
                   y: modelData.y * stage2.scale
                   width: modelData.w * stage2.scale
                   height: modelData.h * stage2.scale
-                  captureSource: modelData.toplevel.wayland
-                  // Windows on hidden workspaces don't change: one copy.
-                  live: modelData.ws === ov.activeWs
+                  Rectangle { anchors.fill: parent; color: ov.backdrop }
+                  ScreencopyView {
+                    anchors.fill: parent
+                    captureSource: parent.modelData.toplevel.wayland
+                    // Windows on hidden workspaces don't change: one copy.
+                    live: parent.modelData.ws === ov.activeWs
+                  }
                 }
               }
 

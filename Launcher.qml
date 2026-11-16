@@ -813,7 +813,6 @@ Item {
   property color foreground: Commons.Color.menu.text
   property color border: Commons.Color.menu.border
   property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
-  property color scrim: Commons.Color.menu.scrim
   property color selectedBackground: Commons.Color.menu.selectedBackground
   property color selectedText: Commons.Color.menu.selectedText
   readonly property int cornerRadius: Style.cornerRadius
@@ -1748,7 +1747,8 @@ Item {
     shown: root.opened
     namespace: "anz-super-spaces-search"
 
-    Rectangle { anchors.fill: parent; color: root.scrim }
+    // No dimmed, see-through layer behind the search: the desktop stays as
+    // it is, and a click outside the card still closes it.
     MouseArea { anchors.fill: parent; onClicked: root.dismiss() }
 
     BorderSurface {
@@ -1757,7 +1757,8 @@ Item {
       height: root.cardHeight
       radius: root.cornerRadius
       anchors.centerIn: parent
-      color: root.background
+      // Solid, whatever the theme's menu alpha: nothing shows through.
+      color: Qt.rgba(root.background.r, root.background.g, root.background.b, 1)
       borderSpec: root.borderSpec
       padding: root.contentMargin
 
@@ -1921,6 +1922,8 @@ Item {
                 height: modelData.h * spBox.s
                 z: modelData.floating ? 1 : 0
 
+                // Solid base, so a see-through (glassy) window's copy stays opaque.
+                Rectangle { anchors.fill: parent; color: Qt.rgba(root.background.r, root.background.g, root.background.b, 1) }
                 ScreencopyView {
                   anchors.fill: parent
                   captureSource: spThumb.modelData.toplevel.wayland
@@ -1928,7 +1931,7 @@ Item {
                 }
                 Rectangle {
                   anchors.fill: parent
-                  color: spThumb.picked ? "transparent" : Qt.rgba(0, 0, 0, 0.35)
+                  color: "transparent"
                   border.width: spThumb.picked ? Style.space(2) : 1
                   border.color: spThumb.picked ? Commons.Color.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.3)
                 }
