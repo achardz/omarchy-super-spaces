@@ -9,6 +9,7 @@ import qs.Commons as Commons
 import qs.Ui
 import "Calc.js" as Calc
 import "MenuSource.js" as MenuSource
+import "Gestures.js" as Gestures
 
 // Super Spaces search: one box for open windows (by app, title or workspace),
 // apps, files and quick maths. It runs inside the Omarchy shell that is
@@ -289,7 +290,9 @@ Item {
   // ---- search sources you can switch on and off ("settings") -----------
   // Saved in ~/.config/omarchy/super-spaces/settings.json as
   // { "sources": { "<name>": true|false } }; anything unset uses its default
-  // below. Ask AI starts off: it spends agent quota, so it is opt-in.
+  // below. Ask AI starts off: it spends agent quota, so it is opt-in. The
+  // trackpad rows (swipe, swipeUp, pinch) are not sources: they are
+  // gestures, owned by Service.qml and Gestures.js.
   readonly property var sourceList: [
     { key: "apps", label: "Apps", on: true },
     { key: "windows", label: "Open windows", on: true },
@@ -299,7 +302,10 @@ Item {
     { key: "menu", label: "Omarchy menu in normal results", on: true },
     { key: "calc", label: "Calculator", on: true },
     { key: "web", label: "Web search row", on: true },
-    { key: "ask", label: "Ask AI agent (web search)", on: false }
+    { key: "ask", label: "Ask AI agent (web search)", on: false },
+    { key: "swipe", label: "Trackpad swipe between workspaces", on: false },
+    { key: "swipeUp", label: "Trackpad swipe up for overview", on: false },
+    { key: "pinch", label: "Trackpad pinch to open search", on: false }
   ]
   // Only what the settings file says explicitly; the rest follow defaults.
   property var sourceState: ({})
@@ -337,6 +343,7 @@ Item {
     var sources = ({})
     for (var i = 0; i < root.sourceList.length; i++) sources[root.sourceList[i].key] = root.on(root.sourceList[i].key)
     settingsFile.setText(JSON.stringify({ sources: sources }, null, 2) + "\n")
+    if (key === "swipe" || key === "swipeUp" || key === "pinch") Quickshell.execDetached(Gestures.syncCommand(sources))
   }
 
   // "settings" or "options" lists the sources; Enter flips one.

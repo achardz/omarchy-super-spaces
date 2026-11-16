@@ -8,12 +8,14 @@
   "description": "A tidier workspace bar (workspaces past 9 fold behind +N) and a Raycast-style search for windows, apps, files, maths, the Omarchy menu, shortcuts, clipboard and AI agents, running inside the Omarchy shell",
   "kinds": [
     "bar-widget",
-    "menu"
+    "menu",
+    "service"
   ],
   "keepLoaded": true,
   "entryPoints": {
     "barWidget": "Workspaces.qml",
-    "menu": "Launcher.qml"
+    "menu": "Launcher.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Super Spaces",
