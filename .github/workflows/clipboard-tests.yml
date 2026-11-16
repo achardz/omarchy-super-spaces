@@ -11,4 +11,4 @@ jobs:
         with:
           node-version: '22'
       - run: bash -n bin/clipboard-paste
-      - run: node --test tests/clipboard.test.js
+      - run: node --test tests/*.test.js

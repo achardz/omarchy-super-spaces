@@ -1221,9 +1221,16 @@ Item {
 
   // ---- UI --------------------------------------------------------------
 
-  OverlayWindow {
+  // Use the standard Quickshell surface, as Omarchy's clipboard does.
+  // OverlayWindow is not available on supported Quickshell 0.3.2 installs.
+  PanelWindow {
     id: panel
-    shown: root.opened
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "anz-super-spaces-search"
 
     Rectangle { anchors.fill: parent; color: root.scrim }
