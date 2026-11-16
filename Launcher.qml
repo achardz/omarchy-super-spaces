@@ -255,28 +255,83 @@ Item {
   }
 
   // ---- app usage (what you launch most rises to the top) ---------------
-  // Kept in the plugin's own state file, not shell.json, since it changes on
-  // every launch: { "<desktop id>": { "count": n, "last": epoch ms } }.
-  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || root.home + "/.local/state") + "/anz.super-spaces"
+  // { "<desktop id>": { "count": n, "last": epoch ms } }, saved through
+  // bin/private-json, which only touches XDG_STATE_HOME/anz.super-spaces when
+  // it is a private directory of ours: a directory another user can write
+  // would let them plant app-usage.json as a symlink, and a save that follows
+  // it replaces the file it points at. When the directory isn't private the
+  // helper refuses, and the ranking lasts only until the shell restarts.
   property var usage: ({})
+  property bool usageLoaded: false
 
-  FileView {
-    id: usageFile
-    path: root.stateDir + "/app-usage.json"
-    printErrors: false
-    atomicWrites: true
-    onLoaded: {
-      try {
-        var parsed = JSON.parse(text())
-        root.usage = (parsed && typeof parsed === "object") ? parsed : ({})
-      } catch (e) {
-        root.usage = ({})
+  Process {
+    id: usageLoad
+    command: [root.binDir + "/private-json", "load", "usage"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var parsed = JSON.parse(text)
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+            root.usage = Object.assign(parsed, root.usage)
+        } catch (e) {}
       }
     }
-    onLoadFailed: root.usage = ({})
+    // A launch before the saved ranking arrived was merged in above; save
+    // only now, so it can't overwrite the file with just that launch.
+    onExited: {
+      root.usageLoaded = true
+      if (usageSave.pending) root.saveUsage()
+    }
   }
 
-  Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.stateDir, root.home + "/.config/omarchy/super-spaces"])
+  Process {
+    id: usageSave
+    property string pending: ""
+    command: [root.binDir + "/private-json", "save", "usage"]
+    stdinEnabled: true
+    onStarted: {
+      write(pending + "\n")
+      pending = ""
+    }
+    onExited: if (pending) running = true
+  }
+
+  function saveUsage() {
+    usageSave.pending = JSON.stringify(root.usage)
+    if (root.usageLoaded && !usageSave.running) usageSave.running = true
+  }
+
+  // The files opened from this search are kept in memory only (a list of
+  // paths is better left off disk); PersistentProperties carries them across
+  // shell reloads, as JSON text so they survive the reload's new JS engine.
+  PersistentProperties {
+    id: memory
+    reloadableId: "anz.super-spaces.launcher"
+    property string recentJson: "[]"
+    onLoaded: {
+      try {
+        var recent = JSON.parse(memory.recentJson)
+        root.recentOwn = Array.isArray(recent) ? recent : []
+      } catch (e) {
+        root.recentOwn = []
+      }
+    }
+  }
+
+  // `omarchy-shell anz.super-spaces resetRanking` (the Setup menu's Reset App
+  // Ranking row) forgets the launch counts.
+  ShellIpc {
+    target: "anz.super-spaces"
+    function resetRanking(): void {
+      root.usage = ({})
+      root.saveUsage()
+    }
+  }
+
+  Component.onCompleted: {
+    usageLoad.running = true
+    settingsLoad.running = true
+  }
 
   function recordLaunch(id) {
     if (!id) return
@@ -284,15 +339,49 @@ Item {
     var prev = next[id] || { count: 0, last: 0 }
     next[id] = { count: Math.min(9999, Number(prev.count || 0) + 1), last: Date.now() }
     root.usage = next
-    usageFile.setText(JSON.stringify(next))
+    root.saveUsage()
+  }
+
+  // Apps started any other way (keybindings, the dock, a terminal) count too:
+  // Hyprland reports every new window, and the first window of an app that
+  // had none open is a launch. Later windows of a running app (dialogs, a
+  // second window) aren't. A launch picked in this search was counted when
+  // it was picked, so its first window is skipped for a few seconds.
+  property var launchedHere: ({})
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (event.name !== "openwindow") return
+      // openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE (the title may hold commas)
+      var parts = String(event.data).split(",")
+      if (parts.length >= 3) root.countWindowLaunch(parts[0], parts[2])
+    }
+  }
+
+  function countWindowLaunch(address, cls) {
+    if (!cls) return
+    var own = String(address).replace(/^0x/, "")
+    var lower = cls.toLowerCase()
+    var values = Hyprland.toplevels.values || []
+    for (var i = 0; i < values.length; i++) {
+      if (String(values[i].address || "").replace(/^0x/, "") === own) continue
+      if (String((values[i].lastIpcObject || {}).class || "").toLowerCase() === lower) return
+    }
+    var entry = DesktopEntries.heuristicLookup(cls)
+    if (!entry || !entry.id) return
+    var id = String(entry.id)
+    if (Date.now() - (root.launchedHere[id] || 0) < 10000) return
+    root.recordLaunch(id)
   }
 
   // ---- search sources you can switch on and off ("settings") -----------
   // Saved in ~/.config/omarchy/super-spaces/settings.json as
   // { "sources": { "<name>": true|false } }; anything unset uses its default
-  // below. Ask AI starts off: it spends agent quota, so it is opt-in. The
-  // trackpad rows (swipe, swipeUp, pinch) are not sources: they are
-  // gestures, owned by Service.qml and Gestures.js.
+  // below. Read and written through bin/private-json, with the same private
+  // directory check as the app ranking. Ask AI starts off: it spends agent
+  // quota, so it is opt-in. The trackpad rows (swipe, swipeUp, pinch) are not
+  // sources: they are gestures, owned by Service.qml and Gestures.js.
   readonly property var sourceList: [
     { key: "apps", label: "Apps", on: true },
     { key: "windows", label: "Open windows", on: true },
@@ -309,7 +398,6 @@ Item {
   ]
   // Only what the settings file says explicitly; the rest follow defaults.
   property var sourceState: ({})
-  readonly property string settingsPath: root.home + "/.config/omarchy/super-spaces/settings.json"
 
   function on(key) {
     if (root.sourceState[key] === true || root.sourceState[key] === false) return root.sourceState[key]
@@ -317,23 +405,46 @@ Item {
     return true
   }
 
-  FileView {
-    id: settingsFile
-    path: root.settingsPath
-    printErrors: false
-    atomicWrites: true
-    onLoaded: {
-      var state = ({})
-      try {
-        var s = JSON.parse(text()).sources || {}
-        for (var k in s) if (s[k] === true || s[k] === false) state[k] = s[k]
-      } catch (e) {
-        console.warn("Super Spaces: ignoring settings.json, it is not valid JSON")
+  // Read on start and on every open, so edits made by hand show up without a
+  // shell restart.
+  Process {
+    id: settingsLoad
+    command: [root.binDir + "/private-json", "load", "settings"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var state = ({})
+        try {
+          var s = JSON.parse(text).sources || {}
+          for (var k in s) if (s[k] === true || s[k] === false) state[k] = s[k]
+        } catch (e) {
+          if (String(text).trim()) console.warn("Super Spaces: ignoring settings.json, it is not valid JSON")
+        }
+        root.sourceState = state
+        if (root.opened && !root.movingWindow) root.rebuild()
       }
-      root.sourceState = state
-      if (root.opened && !root.movingWindow) root.rebuild()
     }
-    onLoadFailed: root.sourceState = ({})
+  }
+
+  // The Hyprland config reads settings.json itself, so a gesture toggle syncs
+  // Hyprland only once the save has landed.
+  Process {
+    id: settingsSave
+    property string pending: ""
+    property var gestureSources: null
+    command: [root.binDir + "/private-json", "save", "settings"]
+    stdinEnabled: true
+    onStarted: {
+      write(pending + "\n")
+      pending = ""
+    }
+    onExited: {
+      if (pending) {
+        running = true
+      } else if (gestureSources) {
+        Quickshell.execDetached(Gestures.syncCommand(gestureSources))
+        gestureSources = null
+      }
+    }
   }
 
   function toggleSource(key) {
@@ -342,8 +453,9 @@ Item {
     root.sourceState = state
     var sources = ({})
     for (var i = 0; i < root.sourceList.length; i++) sources[root.sourceList[i].key] = root.on(root.sourceList[i].key)
-    settingsFile.setText(JSON.stringify({ sources: sources }, null, 2) + "\n")
-    if (key === "swipe" || key === "swipeUp" || key === "pinch") Quickshell.execDetached(Gestures.syncCommand(sources))
+    settingsSave.pending = JSON.stringify({ sources: sources })
+    if (!settingsSave.running) settingsSave.running = true
+    if (key === "swipe" || key === "swipeUp" || key === "pinch") settingsSave.gestureSources = sources
   }
 
   // "settings" or "options" lists the sources; Enter flips one.
@@ -556,26 +668,11 @@ Item {
   }
 
   // ---- recent files ----------------------------------------------------
-  // Our own list (files and folders opened from this search, newest first)
-  // merged with the desktop's shared list, which other apps write to.
+  // Our own list (files and folders opened from this search, newest first,
+  // kept in memory with the app ranking above) merged with the desktop's
+  // shared list, which other apps write to.
   property var recentOwn: []
   property var recentSystem: []
-
-  FileView {
-    id: recentFile
-    path: root.stateDir + "/recent-files.json"
-    printErrors: false
-    atomicWrites: true
-    onLoaded: {
-      try {
-        var parsed = JSON.parse(text())
-        root.recentOwn = Array.isArray(parsed) ? parsed : []
-      } catch (e) {
-        root.recentOwn = []
-      }
-    }
-    onLoadFailed: root.recentOwn = []
-  }
 
   // ~/.local/share/recently-used.xbel: <bookmark href="file://…" modified="…">.
   FileView {
@@ -606,7 +703,7 @@ Item {
     var next = root.recentOwn.filter(function(r) { return r.path !== path })
     next.unshift({ path: path, dir: !!isDir, last: Date.now() })
     root.recentOwn = next.slice(0, 100)
-    recentFile.setText(JSON.stringify(root.recentOwn))
+    memory.recentJson = JSON.stringify(root.recentOwn)
   }
 
   // Paths already listed as recent, so fd results don't repeat them.
@@ -684,13 +781,11 @@ Item {
       root.iconsScannedAt = Date.now()
       root.iconCacheOn = false
     }
-    usageFile.reload()
     // A file created after the shell started has no watch yet; reading it on
     // each open picks it up (and edits) without a shell restart.
     aliasFile.reload()
-    recentFile.reload()
     systemRecent.reload()
-    settingsFile.reload()
+    if (!settingsLoad.running) settingsLoad.running = true
     if (root.on("agents")) {
       agentList.command = [root.binDir + "/agent-sessions"]
       agentList.running = true
@@ -1200,6 +1295,7 @@ Item {
     } else if (kind === "app") {
       if (!payload) return
       root.recordLaunch(payload)
+      root.launchedHere[payload] = Date.now()
       if (windowAddress && !forceNew) root.focusWindow(windowAddress)
       else if (root.appLibrary) root.appLibrary.launch(payload, title)
     } else if (kind === "file") {

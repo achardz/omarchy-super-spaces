@@ -38,7 +38,7 @@ the Omarchy shell you already have.
 ```bash
 omarchy plugin remove anz.super-spaces
 rm ~/.local/bin/workspace-goto            # if you set up Super + N
-rm -r ~/.local/state/anz.super-spaces     # rankings, recent files, bar state
+rm -r ~/.local/state/anz.super-spaces     # app ranking
 ```
 
 Then delete the Super Spaces lines you added to `bindings.lua`,

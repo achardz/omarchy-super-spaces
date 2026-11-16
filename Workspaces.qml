@@ -101,23 +101,19 @@ BarWidget {
 
   // Workspaces past 9 (own 10 and up, plus any visiting ones) fold behind a
   // + / - toggle, like the tray drawer. The one being shown always stays visible.
-  // Open/closed survives shell restarts in the plugin's state file.
-  property bool extrasOpen: false
-  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/anz.super-spaces"
+  // Open/closed is kept in memory (PersistentProperties), not a state file,
+  // for the same symlink reason as the search's app ranking: it survives shell
+  // reloads, and a shell restart starts folded.
+  property bool extrasOpen: memory.extrasOpen
 
-  FileView {
-    id: barState
-    path: root.stateDir + "/bar.json"
-    printErrors: false
-    atomicWrites: true
-    onLoaded: {
-      try { root.extrasOpen = JSON.parse(text()).extrasOpen === true } catch (e) {}
-    }
+  PersistentProperties {
+    id: memory
+    reloadableId: "anz.super-spaces.bar"
+    property bool extrasOpen: false
   }
 
   function setExtrasOpen(open) {
-    root.extrasOpen = open
-    barState.setText(JSON.stringify({ extrasOpen: open }))
+    memory.extrasOpen = open
   }
 
   function isExtra(id) {
@@ -256,10 +252,7 @@ BarWidget {
     root.bar.run(command)
   }
 
-  Component.onCompleted: {
-    refresh()
-    Quickshell.execDetached(["mkdir", "-p", root.stateDir])
-  }
+  Component.onCompleted: refresh()
   onMonitorChanged: root.showActiveMode()
 
   Connections {

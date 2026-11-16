@@ -79,13 +79,18 @@ end
 | `~/.config/omarchy/super-spaces/settings.json` | which results are on or off |
 | `~/.config/omarchy/super-spaces/aliases.json` | your app nicknames (you create this) |
 | `~/.local/state/anz.super-spaces/app-usage.json` | how often you open each app |
-| `~/.local/state/anz.super-spaces/recent-files.json` | files you opened from the search |
-| `~/.local/state/anz.super-spaces/bar.json` | whether the bar is folded |
 
-Delete any of these to start fresh. Nothing is ever sent anywhere, except the
-questions you `ask` an AI agent.
+The settings and the app ranking are only read and saved when their folder
+(`~/.config/omarchy/super-spaces`, `~/.local/state/anz.super-spaces`) and the
+folder above it are private folders of yours: not a link, not writable by
+anyone else. Otherwise the search uses the defaults and keeps the ranking in
+memory until the shell restarts. The files you opened from the search and
+whether the bar is folded are kept in memory only, never in a file: they last
+through shell reloads, and `omarchy restart shell` or logging in again starts
+them fresh.
+Nothing is ever sent anywhere, except the questions you `ask` an AI agent.
 
 ## Reset the app ranking
 
 Omarchy menu → **Setup → Super Spaces → Reset App Ranking** (if you added the
-[Setup page](extras.md)), or delete `app-usage.json` above.
+[Setup page](extras.md)), or run `omarchy-shell anz.super-spaces resetRanking`.

@@ -19,8 +19,12 @@ together, best matches first.
 
 ## It learns
 
-- Apps you open from the search **move up** the list.
-- Files and folders you open show up as **Recent** next time.
+- Apps you open **move up** the list, however you start them: from the
+  search, a keybinding, the dock or a terminal. Opening a second window of an
+  app that's already open doesn't count.
+- Files and folders you open show up as **Recent** next time: the ones you
+  open from the search, and the ones other apps add to the desktop's recent
+  list.
 
 ## Windows: close and move
 

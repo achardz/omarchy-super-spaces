@@ -1,0 +1,74 @@
+#!/bin/bash
+# Load or save one of Super Spaces' own JSON files:
+#   private-json load usage|settings     print the saved object ({} when none)
+#   private-json save usage|settings     replace it with one JSON object line
+#                                        on stdin
+#   usage     XDG_STATE_HOME/anz.super-spaces/app-usage.json   (app ranking)
+#   settings  ~/.config/omarchy/super-spaces/settings.json      (sources on/off)
+#
+# A file is only touched when its directory and that directory's parent are
+# real directories (not symlinks), owned by this user and not writable by
+# group or others. Otherwise another user could plant the file as a symlink
+# and have a save replace the file it points at. A save writes a fresh temp
+# file and renames it into place; rename replaces a planted link itself, never
+# its target. A missing directory is created private (0700). Exit 2 means the
+# directory isn't private and nothing was read or written.
+set -euo pipefail
+umask 077
+
+(( $# == 2 )) || exit 1
+case $2 in
+  usage)
+    parent=${XDG_STATE_HOME:-$HOME/.local/state}
+    dir=$parent/anz.super-spaces
+    file=$dir/app-usage.json
+    format=(-c .)
+    ;;
+  settings)
+    parent=$HOME/.config/omarchy
+    dir=$parent/super-spaces
+    file=$dir/settings.json
+    format=(.)
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+uid=$(id -u)
+
+private_dir() {
+  [[ -d $1 && ! -L $1 ]] || return 1
+  [[ $(stat -c %u -- "$1") == "$uid" ]] || return 1
+  (( (8#$(stat -c %a -- "$1") & 8#022) == 0 ))
+}
+
+mkdir -p -- "$parent"
+[[ -e $dir || -L $dir ]] || mkdir -m 700 -- "$dir"
+if ! private_dir "$parent" || ! private_dir "$dir"; then
+  echo "anz.super-spaces: $dir is not a private directory; not using $file" >&2
+  exit 2
+fi
+
+case $1 in
+  load)
+    if [[ ! -e $file && ! -L $file ]]; then
+      echo '{}'
+    elif [[ -f $file && ! -L $file ]]; then
+      head -c 1048576 -- "$file"
+    else
+      exit 3
+    fi
+    ;;
+  save)
+    IFS= read -r json || exit 1
+    tmp=$(mktemp -- "$dir/.${file##*/}.XXXXXX")
+    trap 'rm -f -- "$tmp"' EXIT
+    jq -e "${format[@]}" <<<"$json" >"$tmp" 2>/dev/null || exit 1
+    jq -e 'type == "object"' "$tmp" >/dev/null || exit 1
+    mv -fT -- "$tmp" "$file"
+    trap - EXIT
+    ;;
+  *)
+    exit 1
+    ;;
+esac
