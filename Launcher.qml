@@ -1433,7 +1433,11 @@ Item {
       else if (root.appLibrary) root.appLibrary.launch(payload, title)
     } else if (kind === "file") {
       root.recordFile(payload, row.glyph === "▸")
-      Quickshell.execDetached(["xdg-open", payload])
+      // gio opens it with the default app for its type, and starts a
+      // terminal app (nvim for text, say) in a terminal. xdg-open runs those
+      // in the terminal it was called from, and the shell has none, so the
+      // file never showed up.
+      Quickshell.execDetached(["gio", "open", "--", payload])
     } else if (kind === "web") {
       if (payload.indexOf("https://www.google.com/search?q=") === 0) Quickshell.execDetached(["xdg-open", payload])
     } else if (kind === "menu") {
