@@ -46,4 +46,6 @@ With Quickshell and fd installed, run `python3 tests/path-runtime.py`. It runs
 the real path code from `Launcher.qml` offscreen against a folder of 5000
 files: a bare folder path lists folders only, a started name lists folders
 then files starting with it, hidden entries appear only after a `.`, results
-stop at 200 with a note, and a missing folder says so.
+stop at 200 with a note, and a missing folder says so. A name holding a
+newline stays one row with its real absolute path (not split into a second,
+relative one), and control or bidi characters in names show as `?`.

@@ -16,6 +16,9 @@ repo = Path(__file__).resolve().parent.parent
 source = (repo / 'Launcher.qml').read_text()
 start = source.index('  // ---- paths: "/", "~"')
 paths = source[start:source.index('\n  // ---- selection and activation', start)]
+for name in ['fdPaths', 'shownText']:
+    at = source.index('  function ' + name + '(')
+    paths += '\n' + source[at:source.index('\n  }', at) + 4]
 
 CASES = [
     ('~/big/', 'folders only: 5000 files left out'),
@@ -24,6 +27,8 @@ CASES = [
     ('~/many/', 'capped at maxPathRows'),
     ('~/missing/', 'missing folder'),
     ('~', 'bare ~ is home'),
+    ('~/odd/', 'newline and bidi names (another user\'s folder)'),
+    ('~/odd/r', 'a newline name stays one row'),
 ]
 
 with tempfile.TemporaryDirectory(prefix='ss-path-') as d:
@@ -38,6 +43,9 @@ with tempfile.TemporaryDirectory(prefix='ss-path-') as d:
     (big / '.hidden-file').touch()
     for i in range(250):
         (tmp / 'many' / f'd{i:03}').mkdir(parents=True)
+    odd = tmp / 'odd'
+    (odd / 'doc\u202efdp.exe').mkdir(parents=True)
+    (odd / 'report\nDocuments').touch()
 
     qml = '''import Quickshell
 import Quickshell.Io
@@ -56,7 +64,7 @@ ShellRoot {
  Process { id: fileSearch }
  function showRows(rows) {
    console.log("ROWS " + JSON.stringify({ q: root.filterText, ms: Date.now() - root.started,
-     rows: rows.map(function(r) { return [r.kind, r.title, r.subtitle, r.tag] }) }))
+     rows: rows.map(function(r) { return [r.kind, r.title, r.subtitle, r.tag, r.payload] }) }))
    next()
  }
  function next() {
@@ -106,6 +114,16 @@ ShellRoot {
 
     assert rows('~/missing/')[0][:2] == ['info', 'No folders here'], rows('~/missing/')
     assert 'big' in [x[1] for x in rows('~', 'Folder')], rows('~')
+
+    # A newline in a name must not split it into two rows (one a relative path
+    # chosen by the file's owner), and a bidi override must not disguise it.
+    shown = [x for x in rows('~/odd/') if x[0] == 'file']
+    assert [(x[1], x[4]) for x in shown] == [('doc?fdp.exe', str(odd / 'doc\u202efdp.exe'))], shown
+    shown = [x for x in rows('~/odd/r') if x[0] == 'file']
+    assert [(x[1], x[4]) for x in shown] == [('report?Documents', str(odd / 'report\nDocuments'))], shown
+    for q in results:
+        for x in rows(q):
+            assert x[0] != 'file' or x[4].startswith('/'), ('relative payload', x)
 
     for q, what in CASES:
         print(f"{results[q]['ms']:>4} ms  {q:<12} {what}")

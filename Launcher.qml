@@ -721,7 +721,7 @@ Item {
       if (words.length > 0 && !root.matchesAll(path, words)) continue
       var name = path.slice(path.lastIndexOf("/") + 1) || path
       var shown = path.indexOf(root.home) === 0 ? "~" + path.slice(root.home.length) : path
-      out.push({ kind: "file", title: name, subtitle: shown, icon: "",
+      out.push({ kind: "file", title: root.shownText(name), subtitle: root.shownText(shown), icon: "",
                  glyph: r.dir ? "▸" : "·", tag: "Recent", payload: path })
     }
     var shownMap = ({})
@@ -1128,20 +1128,36 @@ Item {
   // folder without hidden paths (so tool data like ~/.vscode or caches stay
   // out) plus ~/.config explicitly, where dotfiles live. fd also honours
   // .gitignore, which keeps build output and node_modules out of projects.
+  // --print0: a file name may hold a newline, and split on lines it would
+  // turn into two rows, one of them a relative path chosen by whoever named
+  // the file. Paths are split on NUL, which no name can hold.
   function fdCommand(type, limit) {
-    return ["fd", "--fixed-strings", "--ignore-case", "--type", type,
+    return ["fd", "--fixed-strings", "--ignore-case", "--type", type, "--print0",
             "--max-results", String(limit), "--exclude", "node_modules",
             "--", root.pendingFileQuery, root.home, root.home + "/.config"]
   }
 
+  // Absolute paths from fd --print0 output, without trailing slashes.
+  function fdPaths(text) {
+    return String(text).split("\u0000").filter(function(l) { return l.charAt(0) === "/" })
+      .map(function(l) { return l.length > 1 ? l.replace(/\/$/, "") : l })
+  }
+
+  // Names are chosen by whoever made the file: control characters and bidi
+  // overrides could make one read as another ("doc<RLO>fdp.exe" shows as
+  // "docexe.pdf"), so they are shown as "?". The payload keeps the real path.
+  function shownText(s) {
+    return String(s).replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "?")
+  }
+
   function appendPaths(text, isDir) {
-    var lines = String(text).split("\n").filter(function(l) { return l.length > 0 })
+    var lines = root.fdPaths(text)
     for (var i = 0; i < lines.length; i++) {
-      var path = lines[i].replace(/\/$/, "")
+      var path = lines[i]
       if (root.shownRecentPaths[path]) continue
       var name = path.slice(path.lastIndexOf("/") + 1)
       var shown = path.indexOf(root.home) === 0 ? "~" + path.slice(root.home.length) : path
-      displayModel.append({ kind: "file", title: name, subtitle: shown, icon: "",
+      displayModel.append({ kind: "file", title: root.shownText(name), subtitle: root.shownText(shown), icon: "",
                             glyph: isDir ? "▸" : "·", tag: isDir ? "Folder" : "File", payload: path, window: "" })
     }
     root.clampSelection()
@@ -1214,7 +1230,7 @@ Item {
   // once a "." is typed. Arguments go straight to fd, never through a shell.
   function pathCommand(path, type) {
     var cmd = ["fd", "--exact-depth", "1", "--type", type, "--max-results", String(root.maxPathRows),
-               "--no-ignore", "--ignore-case", "--absolute-path", "--color", "never"]
+               "--no-ignore", "--ignore-case", "--absolute-path", "--color", "never", "--print0"]
     if (path.prefix.charAt(0) === ".") cmd.push("--hidden")
     cmd.push("--", "^" + path.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), path.dir)
     return cmd
@@ -1232,9 +1248,9 @@ Item {
   }
 
   function pathLines(text) {
-    var lines = String(text).split("\n").filter(function(l) { return l.length > 0 })
-      .map(function(l) { return l.replace(/\/$/, "") })
-    return lines.sort(function(a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0 })
+    return root.fdPaths(text).sort(function(a, b) {
+      return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0
+    })
   }
 
   function showPathRows(folders, files) {
@@ -1243,7 +1259,8 @@ Item {
     function add(list, isDir) {
       for (var i = 0; i < list.length; i++) {
         var full = list[i]
-        rows.push({ kind: "file", title: full.slice(full.lastIndexOf("/") + 1), subtitle: root.typedPath(full, path),
+        rows.push({ kind: "file", title: root.shownText(full.slice(full.lastIndexOf("/") + 1)),
+                    subtitle: root.shownText(root.typedPath(full, path)),
                     icon: "", glyph: isDir ? "▸" : "·", tag: isDir ? "Folder" : "File", payload: full })
       }
     }
