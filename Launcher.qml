@@ -1035,14 +1035,14 @@ Item {
   }
 
   // ---- "sp:N" and "sp:N:I": a workspace's windows, with thumbnails -------
-  // "sp:" lists the workspaces that have windows; "sp:2" lists workspace 2's
-  // windows, numbered left to right, above a thumbnail of the workspace laid
-  // out as on screen; "sp:2:3" highlights the third. Enter (or a click on a
-  // thumbnail) goes to that window.
+  // "sp" or "sp:" lists the workspaces that have windows; "sp:2" lists
+  // workspace 2's windows, numbered left to right, above a thumbnail of the
+  // workspace laid out as on screen; "sp:2:3" highlights the third. Enter (or
+  // a click on a thumbnail) goes to that window.
   property var spPreview: null
 
   function spQuery(query) {
-    var m = /^\s*sp:(\d{1,2})?(?::(\d{0,2}))?\s*$/i.exec(String(query || ""))
+    var m = /^\s*sp(?::(\d{1,2})?(?::(\d{0,2}))?)?\s*$/i.exec(String(query || ""))
     return m ? { ws: m[1] ? Number(m[1]) : 0, index: m[2] ? Number(m[2]) : 0 } : null
   }
 
