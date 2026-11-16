@@ -301,13 +301,15 @@ Item {
     if (root.usageLoaded && !usageSave.running) usageSave.running = true
   }
 
-  // The files opened from this search are kept in memory only (a list of
-  // paths is better left off disk); PersistentProperties carries them across
-  // shell reloads, as JSON text so they survive the reload's new JS engine.
+  // The files opened from this search and the sums whose answer was copied
+  // are kept in memory only (better left off disk); PersistentProperties
+  // carries them across shell reloads, as JSON text so they survive the
+  // reload's new JS engine.
   PersistentProperties {
     id: memory
     reloadableId: "anz.super-spaces.launcher"
     property string recentJson: "[]"
+    property string calcJson: "[]"
     onLoaded: {
       try {
         var recent = JSON.parse(memory.recentJson)
@@ -315,7 +317,37 @@ Item {
       } catch (e) {
         root.recentOwn = []
       }
+      try {
+        var calcs = JSON.parse(memory.calcJson)
+        root.recentCalcs = Array.isArray(calcs) ? calcs : []
+      } catch (e) {
+        root.recentCalcs = []
+      }
     }
+  }
+
+  // ---- recent calculations: answers copied with Enter, newest first ------
+  readonly property int maxRecentCalcs: 5
+  readonly property int maxRecentClips: 5
+  property var recentCalcs: []
+
+  // From the empty screen the sum isn't typed any more; keep the one stored
+  // with that answer.
+  function recordCalc(expr, value) {
+    if (!value) return
+    var old = root.recentCalcs.filter(function(c) { return c.value === value })[0]
+    var e = String(expr || "").trim() || (old ? old.expr : "")
+    var next = root.recentCalcs.filter(function(c) { return c.value !== value })
+    next.unshift({ expr: e, value: value })
+    root.recentCalcs = next.slice(0, 20)
+    memory.calcJson = JSON.stringify(root.recentCalcs)
+  }
+
+  function recentCalcRows() {
+    return root.recentCalcs.slice(0, root.maxRecentCalcs).map(function(c) {
+      return { kind: "calc", title: "= " + c.value, subtitle: (c.expr ? c.expr + "  ·  " : "") + "Enter copies it again",
+               icon: "", glyph: "=", tag: "Calc", payload: c.value }
+    })
   }
 
   // `omarchy-shell anz.super-spaces resetRanking` (the Setup menu's Reset App
@@ -978,16 +1010,14 @@ Item {
 
   // Typed: Omarchy's fuzzy app ranking (sortedEntries returns {entry, score}
   // rows) merged with alias hits, nudged by how often you launch each app.
-  // Empty: your most-used apps.
+  // Empty: the apps launched most recently.
   function appRows(query) {
     if (!root.appLibrary) return []
     var out = []
     if (!String(query).trim()) {
-      // Each app's boost (a log and a clock read) once, not per comparison.
-      var boosts = ({})
+      // The apps launched most recently, newest first.
       var ids = Object.keys(root.usage)
-      for (var u = 0; u < ids.length; u++) boosts[ids[u]] = root.usageBoost(ids[u])
-      ids.sort(function(a, b) { return boosts[b] - boosts[a] })
+      ids.sort(function(a, b) { return Number(root.usage[b].last || 0) - Number(root.usage[a].last || 0) })
       for (var r = 0; r < ids.length && out.length < root.maxRecentApps; r++) {
         var known = DesktopEntries.byId(ids[r])
         if (known && !known.noDisplay) out.push(root.appRow(known, true))
@@ -1198,8 +1228,8 @@ Item {
     }
 
     // Typing puts apps first (like Raycast), then windows and a web search
-    // (files arrive below as fd answers); with no text, open windows lead
-    // and your most-used apps follow.
+    // (files arrive below as fd answers). With no text: recent apps, recent
+    // calculations and recent clips, then open windows and recent files.
     var hasText = String(query).trim().length > 0
     if (hasText) {
       var q = String(query).trim()
@@ -1213,8 +1243,10 @@ Item {
                     icon: "", glyph: "⌕", tag: "Web", payload: "https://www.google.com/search?q=" + encodeURIComponent(q) })
       if (root.on("ask") && q.length >= 3) rows.push(root.askRow(q))
     } else {
-      if (root.on("windows")) rows = rows.concat(root.windowRows(words))
       if (root.on("apps")) rows = rows.concat(root.appRows(query))
+      if (root.on("calc")) rows = rows.concat(root.recentCalcRows())
+      rows = rows.concat(root.clipRows("").filter(function(r) { return r.kind === "clip" }).slice(0, root.maxRecentClips))
+      if (root.on("windows")) rows = rows.concat(root.windowRows(words))
       if (root.on("recent")) rows = rows.concat(root.recentFileRows(words, root.maxRecentFiles))
     }
 
@@ -1634,6 +1666,7 @@ Item {
     } else if (kind === "agent") {
       root.resumeAgent(payload)
     } else if (kind === "calc") {
+      root.recordCalc(root.filterText, payload)
       Quickshell.execDetached(["wl-copy", "--", payload])
     }
   }

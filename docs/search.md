@@ -7,7 +7,7 @@ together, best matches first.
 
 | Type this… | …and you get |
 |---|---|
-| nothing at all | your open windows, the apps you use most, files you opened recently |
+| nothing at all | the apps you opened most recently, sums whose answer you copied, your latest clips, then your open windows and files you opened recently |
 | an app name | the app. If it's already open, **Enter** jumps to it and **Shift + Enter** opens a new window |
 | a nickname like `chrome`, `browser`, `files`, `code`, `terminal` | the app you actually use for that |
 | part of a window's title | that window, wherever it is |
