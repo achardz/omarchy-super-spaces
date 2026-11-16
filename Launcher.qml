@@ -813,6 +813,7 @@ Item {
   property color foreground: Commons.Color.menu.text
   property color border: Commons.Color.menu.border
   property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
+  property color scrim: Commons.Color.menu.scrim
   property color selectedBackground: Commons.Color.menu.selectedBackground
   property color selectedText: Commons.Color.menu.selectedText
   readonly property int cornerRadius: Style.cornerRadius
@@ -1747,8 +1748,7 @@ Item {
     shown: root.opened
     namespace: "anz-super-spaces-search"
 
-    // No dimmed, see-through layer behind the search: the desktop stays as
-    // it is, and a click outside the card still closes it.
+    Rectangle { anchors.fill: parent; color: root.scrim }
     MouseArea { anchors.fill: parent; onClicked: root.dismiss() }
 
     BorderSurface {
@@ -1757,8 +1757,7 @@ Item {
       height: root.cardHeight
       radius: root.cornerRadius
       anchors.centerIn: parent
-      // Solid, whatever the theme's menu alpha: nothing shows through.
-      color: Qt.rgba(root.background.r, root.background.g, root.background.b, 1)
+      color: root.background
       borderSpec: root.borderSpec
       padding: root.contentMargin
 

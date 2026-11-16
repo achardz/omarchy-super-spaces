@@ -34,8 +34,10 @@ Item {
   property real monY: 0
 
   readonly property int duration: 260
-  // Solid while open: the desktop doesn't show through behind the thumbnails.
-  readonly property color backdrop: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
+  readonly property color backdrop: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.94)
+  // Under each window copy, so a see-through (glassy) window's thumbnail
+  // stays opaque.
+  readonly property color thumbBase: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
   readonly property color text: Commons.Color.foreground
   readonly property color accent: Commons.Color.accent
 
@@ -267,7 +269,7 @@ Item {
 
           // A see-through (glassy) window would show the backdrop through
           // its copy; a solid base keeps each thumbnail opaque.
-          Rectangle { anchors.fill: parent; color: ov.backdrop }
+          Rectangle { anchors.fill: parent; color: ov.thumbBase }
           ScreencopyView {
             anchors.fill: parent
             captureSource: thumb.modelData.toplevel.wayland
@@ -350,7 +352,7 @@ Item {
                   y: modelData.y * stage2.scale
                   width: modelData.w * stage2.scale
                   height: modelData.h * stage2.scale
-                  Rectangle { anchors.fill: parent; color: ov.backdrop }
+                  Rectangle { anchors.fill: parent; color: ov.thumbBase }
                   ScreencopyView {
                     anchors.fill: parent
                     captureSource: parent.modelData.toplevel.wayland
