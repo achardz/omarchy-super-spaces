@@ -152,10 +152,11 @@ Item {
     return m ? (m[2] || "") : null
   }
 
-  function clipRows(rest) {
+  function clipRows(rest, limit) {
     var words = root.terms(rest)
     var out = []
-    for (var i = 0; i < root.clips.length && out.length < root.maxClips; i++) {
+    var most = limit || root.maxClips
+    for (var i = 0; i < root.clips.length && out.length < most; i++) {
       var c = root.clips[i]
       var isImage = c && c.type === "image"
       var text = isImage ? String(c.path || "image") : String((c && c.text) || "")
@@ -199,6 +200,15 @@ Item {
   }
 
   property var shortcuts: []
+  property double shortcutsLoadedAt: 0
+
+  // omarchy-menu-keybindings takes ~0.7 s of CPU, so it runs only once a
+  // "keys" search starts, and again at most every 5 minutes after that,
+  // instead of on every open.
+  function loadShortcuts() {
+    if (shortcutList.running || Date.now() - root.shortcutsLoadedAt < 5 * 60 * 1000) return
+    shortcutList.running = true
+  }
 
   Process {
     id: shortcutList
@@ -215,6 +225,7 @@ Item {
           if (keys && desc) out.push({ keys: keys, desc: desc, line: lines[i] })
         }
         root.shortcuts = out
+        root.shortcutsLoadedAt = Date.now()
         if (root.opened && root.shortcutQuery(root.filterText) !== null) root.rebuild()
       }
     }
@@ -391,6 +402,8 @@ Item {
     }
   }
 
+  property var classApp: ({})
+
   function countWindowLaunch(address, cls) {
     if (!cls) return
     var own = String(address).replace(/^0x/, "")
@@ -400,9 +413,15 @@ Item {
       if (String(values[i].address || "").replace(/^0x/, "") === own) continue
       if (String((values[i].lastIpcObject || {}).class || "").toLowerCase() === lower) return
     }
-    var entry = DesktopEntries.heuristicLookup(cls)
-    if (!entry || !entry.id) return
-    var id = String(entry.id)
+    // heuristicLookup walks every desktop entry; a class maps to the same
+    // app every time, so each hit is looked up once.
+    var id = root.classApp[lower]
+    if (!id) {
+      var entry = DesktopEntries.heuristicLookup(cls)
+      if (!entry || !entry.id) return
+      id = String(entry.id)
+      root.classApp[lower] = id
+    }
     if (Date.now() - (root.launchedHere[id] || 0) < 10000) return
     root.recordLaunch(id)
   }
@@ -822,7 +841,6 @@ Item {
       agentList.command = [root.binDir + "/agent-sessions"]
       agentList.running = true
     }
-    shortcutList.running = true
     whichAgent.running = true
     root.opened = true
     // An answer still loading (or shown) when the search was closed comes
@@ -1193,6 +1211,7 @@ Item {
     // "keys …", "menu …", "clip …", "ai …" and "settings" each search one
     // source only.
     var keysRest = root.shortcutQuery(query)
+    if (keysRest !== null) root.loadShortcuts()
     var menuRest = keysRest === null ? root.menuQuery(query) : null
     var clipRest = keysRest === null && menuRest === null ? root.clipQuery(query) : null
     var agentRest = keysRest === null && menuRest === null && clipRest === null ? root.agentQuery(query) : null
@@ -1245,7 +1264,7 @@ Item {
     } else {
       if (root.on("apps")) rows = rows.concat(root.appRows(query))
       if (root.on("calc")) rows = rows.concat(root.recentCalcRows())
-      rows = rows.concat(root.clipRows("").filter(function(r) { return r.kind === "clip" }).slice(0, root.maxRecentClips))
+      rows = rows.concat(root.clipRows("", root.maxRecentClips).filter(function(r) { return r.kind === "clip" }))
       if (root.on("windows")) rows = rows.concat(root.windowRows(words))
       if (root.on("recent")) rows = rows.concat(root.recentFileRows(words, root.maxRecentFiles))
     }
