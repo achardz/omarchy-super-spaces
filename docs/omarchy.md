@@ -33,6 +33,12 @@ Type `clip` to see what you copied recently.
 - **Enter** pastes it into the window you were in.
 - **Shift + Enter** only copies it.
 
+The row keeps the text (or image path) you saw, even if new copies reorder
+history while search is open. Clipboard contents travel to the copy helper
+over stdin, not command-line arguments. A missing image or failed copy does
+not trigger a paste. Image files are still read from their saved paths; this
+does not protect against another program replacing the image file itself.
+
 > Your clipboard history can hold passwords or keys you copied. Delete those
 > in Omarchy's clipboard manager (**Super + Ctrl + V**).
 

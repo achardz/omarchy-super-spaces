@@ -124,8 +124,8 @@ Item {
 
   // ---- clipboard history ("clip …") -----------------------------------
   // Omarchy's own history (~/.local/state/omarchy/clipboard-history.json,
-  // written by its clipboard manager). Picking an entry goes back through
-  // Omarchy's helper with its index, exactly like that manager does.
+  // written by its clipboard manager). Rows own a snapshot, not a position
+  // in this mutable list. Never resolve an old row against newer history.
   readonly property int maxClips: 50
   property var clips: []
 
@@ -165,7 +165,9 @@ Item {
       out.push({ kind: "clip", title: flat.length > 90 ? flat.slice(0, 90) + "…" : flat,
                  subtitle: (isImage ? "Image" : (lines > 1 ? lines + " lines" : text.length + " characters"))
                    + "  ·  Enter pastes, Shift+Enter copies",
-                 icon: "", glyph: isImage ? "▣" : "❐", tag: "Clip", payload: String(i) })
+                 icon: "", glyph: isImage ? "▣" : "❐", tag: "Clip", payload: JSON.stringify(isImage
+                   ? { type: "image", path: String(c.path), mime: String(c.mime || "image/png") }
+                   : { type: "text", text: text }) })
     }
     if (out.length === 0)
       out.push({ kind: "info", title: root.clips.length ? "No matching clips" : "Clipboard history is empty",
@@ -173,19 +175,26 @@ Item {
     return out
   }
 
-  function useClip(index, copyOnly) {
-    if (!/^\d+$/.test(index)) return
-    var c = root.clips[Number(index)]
-    var omarchy = Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy"
-    if (c && c.type === "image" && c.path) {
-      Quickshell.execDetached(copyOnly
-        ? [omarchy + "/bin/omarchy-clipboard-paste-file", "--copy-only", String(c.mime || "image/png"), String(c.path)]
-        : [omarchy + "/bin/omarchy-clipboard-paste-file", String(c.mime || "image/png"), String(c.path)])
-    } else {
-      Quickshell.execDetached(copyOnly
-        ? [omarchy + "/bin/omarchy-clipboard-paste-text", "--copy-only", "--history-index", index]
-        : [omarchy + "/bin/omarchy-clipboard-paste-text", "--shift-insert", "--history-index", index])
+  function useClip(snapshot, copyOnly) {
+    // Keep clipboard contents out of argv, environment, logs and temp files.
+    // One in-flight request owns its input until the helper has consumed it.
+    if (clipPaste.running) return
+    clipPaste.snapshot = snapshot
+    clipPaste.command = copyOnly
+      ? [root.binDir + "/clipboard-paste", "--copy-only"]
+      : [root.binDir + "/clipboard-paste"]
+    clipPaste.running = true
+  }
+
+  Process {
+    id: clipPaste
+    property string snapshot: ""
+    stdinEnabled: true
+    onStarted: {
+      write(snapshot + "\n")
+      snapshot = ""
     }
+    onExited: snapshot = ""
   }
 
   property var shortcuts: []
