@@ -180,10 +180,11 @@ Item {
     }
   }
 
-  OverlayWindow {
+  // OverlayWindow where the shell has it, PanelWindow otherwise (Surface.qml).
+  Surface {
     id: win
     shown: ov.stage > 0
-    WlrLayershell.namespace: "anz-super-spaces-overview"
+    namespace: "anz-super-spaces-overview"
 
     Rectangle {
       anchors.fill: parent
@@ -208,11 +209,11 @@ Item {
     // ---- stage 1: this workspace's windows -----------------------------
     Item {
       id: stage1
-      readonly property real margin: Math.max(Style.space(48), win.height * 0.07)
+      readonly property real margin: Math.max(Style.space(48), win.windowHeight * 0.07)
       x: margin
       y: margin
-      width: win.width - margin * 2
-      height: win.height - margin * 2
+      width: win.windowWidth - margin * 2
+      height: win.windowHeight - margin * 2
       visible: ov.stage === 1
       readonly property var targets: ov.layout(ov.windows, width, height)
 
@@ -285,7 +286,7 @@ Item {
     Item {
       id: stage2
       anchors.fill: parent
-      anchors.margins: Math.max(Style.space(48), win.height * 0.07)
+      anchors.margins: Math.max(Style.space(48), win.windowHeight * 0.07)
       visible: ov.stage === 2
       opacity: visible ? 1 : 0
       Behavior on opacity { NumberAnimation { duration: ov.duration; easing.type: Easing.OutCubic } }
@@ -295,11 +296,11 @@ Item {
       readonly property int count: Math.max(1, ov.spaces.length)
       readonly property int cols: Math.ceil(Math.sqrt(count * 1.6))
       readonly property int rows: Math.ceil(count / cols)
-      readonly property real aspect: win.width / Math.max(1, win.height)
+      readonly property real aspect: win.windowWidth / Math.max(1, win.windowHeight)
       readonly property real cellW: Math.min((width - gap * (cols - 1)) / cols,
                                              ((height - gap * (rows - 1)) / rows - labelH) * aspect)
       readonly property real cellH: cellW / aspect
-      readonly property real scale: cellW / Math.max(1, win.width)
+      readonly property real scale: cellW / Math.max(1, win.windowWidth)
 
       Grid {
         anchors.centerIn: parent
