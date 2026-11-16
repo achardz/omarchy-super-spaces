@@ -124,8 +124,8 @@ Item {
 
   // ---- clipboard history ("clip …") -----------------------------------
   // Omarchy's own history (~/.local/state/omarchy/clipboard-history.json,
-  // written by its clipboard manager). Picking an entry goes back through
-  // Omarchy's helper with its index, exactly like that manager does.
+  // written by its clipboard manager). Rows own a snapshot, not a position
+  // in this mutable list. Never resolve an old row against newer history.
   readonly property int maxClips: 50
   property var clips: []
 
@@ -165,7 +165,9 @@ Item {
       out.push({ kind: "clip", title: flat.length > 90 ? flat.slice(0, 90) + "…" : flat,
                  subtitle: (isImage ? "Image" : (lines > 1 ? lines + " lines" : text.length + " characters"))
                    + "  ·  Enter pastes, Shift+Enter copies",
-                 icon: "", glyph: isImage ? "▣" : "❐", tag: "Clip", payload: String(i) })
+                 icon: "", glyph: isImage ? "▣" : "❐", tag: "Clip", payload: JSON.stringify(isImage
+                   ? { type: "image", path: String(c.path), mime: String(c.mime || "image/png") }
+                   : { type: "text", text: text }) })
     }
     if (out.length === 0)
       out.push({ kind: "info", title: root.clips.length ? "No matching clips" : "Clipboard history is empty",
@@ -173,19 +175,26 @@ Item {
     return out
   }
 
-  function useClip(index, copyOnly) {
-    if (!/^\d+$/.test(index)) return
-    var c = root.clips[Number(index)]
-    var omarchy = Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy"
-    if (c && c.type === "image" && c.path) {
-      Quickshell.execDetached(copyOnly
-        ? [omarchy + "/bin/omarchy-clipboard-paste-file", "--copy-only", String(c.mime || "image/png"), String(c.path)]
-        : [omarchy + "/bin/omarchy-clipboard-paste-file", String(c.mime || "image/png"), String(c.path)])
-    } else {
-      Quickshell.execDetached(copyOnly
-        ? [omarchy + "/bin/omarchy-clipboard-paste-text", "--copy-only", "--history-index", index]
-        : [omarchy + "/bin/omarchy-clipboard-paste-text", "--shift-insert", "--history-index", index])
+  function useClip(snapshot, copyOnly) {
+    // Keep clipboard contents out of argv, environment, logs and temp files.
+    // One in-flight request owns its input until the helper has consumed it.
+    if (clipPaste.running) return
+    clipPaste.snapshot = snapshot
+    clipPaste.command = copyOnly
+      ? [root.binDir + "/clipboard-paste", "--copy-only"]
+      : [root.binDir + "/clipboard-paste"]
+    clipPaste.running = true
+  }
+
+  Process {
+    id: clipPaste
+    property string snapshot: ""
+    stdinEnabled: true
+    onStarted: {
+      write(snapshot + "\n")
+      snapshot = ""
     }
+    onExited: snapshot = ""
   }
 
   property var shortcuts: []
@@ -642,8 +651,8 @@ Item {
   property int contentMargin: Style.spacing.panelPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int rowHeight: Math.max(Style.space(52), Style.font.body + Style.font.caption + Style.spacing.rowPaddingX * 2)
-  property int cardWidth: Math.min(Style.space(640), panel.width - Style.gapsOut * 2)
-  property int cardHeight: Math.min(Style.space(560), panel.height - Style.gapsOut * 2)
+  property int cardWidth: Math.min(Style.space(640), panel.windowWidth - Style.gapsOut * 2)
+  property int cardHeight: Math.min(Style.space(560), panel.windowHeight - Style.gapsOut * 2)
 
   // ---- lifecycle -------------------------------------------------------
 
@@ -1212,10 +1221,11 @@ Item {
 
   // ---- UI --------------------------------------------------------------
 
-  OverlayWindow {
+  // OverlayWindow where the shell has it, PanelWindow otherwise (Surface.qml).
+  Surface {
     id: panel
     shown: root.opened
-    WlrLayershell.namespace: "anz-super-spaces-search"
+    namespace: "anz-super-spaces-search"
 
     Rectangle { anchors.fill: parent; color: root.scrim }
     MouseArea { anchors.fill: parent; onClicked: root.dismiss() }

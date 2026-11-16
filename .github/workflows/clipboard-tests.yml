@@ -1,0 +1,14 @@
+name: Clipboard regression tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  clipboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bash -n bin/clipboard-paste
+      - run: node --test tests/*.test.js

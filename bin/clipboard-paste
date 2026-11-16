@@ -1,0 +1,35 @@
+#!/bin/bash
+# Copy the immutable entry shown by Super Spaces, received as one JSON line
+# on stdin. Never resolve a history index here or put clipboard text in argv.
+set -euo pipefail
+
+copy_only=false
+if [[ ${1:-} == --copy-only && $# == 1 ]]; then
+  copy_only=true
+elif (( $# != 0 )); then
+  exit 1
+fi
+IFS= read -r entry || exit 1
+
+# Validate before wl-copy starts, so invalid input cannot clear the clipboard.
+kind=$(printf '%s' "$entry" | jq -er '
+  if type != "object" then error("invalid entry")
+  elif .type == "text" and (.text | type == "string" and length > 0) then "text"
+  elif .type == "image" and (.path | type == "string" and startswith("/"))
+    and (.mime | type == "string" and test("^image/[a-zA-Z0-9.+-]+$")) then "image"
+  else error("invalid entry") end' 2>/dev/null) || exit 1
+
+if [[ $kind == text ]]; then
+  printf '%s' "$entry" | jq -j '.text' | wl-copy --type 'text/plain;charset=utf-8'
+else
+  path=$(printf '%s' "$entry" | jq -r '.path')
+  mime=$(printf '%s' "$entry" | jq -r '.mime')
+  [[ -f $path && -r $path ]] || exit 1
+  wl-copy --type "$mime" < "$path"
+fi
+
+# A failed copy exits above; never paste an unrelated previous selection.
+if [[ $copy_only != true ]]; then
+  sleep 0.15
+  wtype -M shift -k Insert -m shift 2>/dev/null
+fi
