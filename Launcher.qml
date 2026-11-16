@@ -1750,6 +1750,10 @@ Item {
             else if (root.filterText) root.setFilter("")
             else root.dismiss()
             event.accepted = true
+          } else if (event.key === Qt.Key_Backspace && event.modifiers === Qt.ShiftModifier && root.filterText) {
+            // Shift+Backspace clears the whole query (like Ctrl+U).
+            root.setFilter("")
+            event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
             event.accepted = true
