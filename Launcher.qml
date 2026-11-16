@@ -1343,6 +1343,31 @@ Item {
     return /^0x[0-9a-fA-F]+$/.test(addr) ? addr : ""
   }
 
+  // Alt+T: a terminal in the highlighted folder, or in the folder of the
+  // highlighted file; with nothing usable highlighted while typing a path,
+  // in that path's folder. Started the way Omarchy starts its terminals, but
+  // with the shell as the command: Ghostty runs as a single instance, and a
+  // new window with no command ignores --dir and opens in ~.
+  function terminalDir() {
+    if (root.selectedIndex >= 0 && root.selectedIndex < displayModel.count) {
+      var row = displayModel.get(root.selectedIndex)
+      if (row.kind === "file") {
+        var p = String(row.payload)
+        return row.glyph === "▸" ? p : (p.slice(0, p.lastIndexOf("/")) || "/")
+      }
+    }
+    var path = root.pathQuery(root.filterText)
+    return path ? path.dir : ""
+  }
+
+  function terminalAtSelected() {
+    var dir = root.terminalDir()
+    if (!dir) return
+    root.dismiss()
+    Quickshell.execDetached(["uwsm-app", "--", "xdg-terminal-exec", "--dir=" + dir, "sh", "-c",
+      "exec \"${SHELL:-$(getent passwd \"$(id -un)\" | cut -d: -f7)}\""])
+  }
+
   // Ctrl+W: close the window, keep the search open so you can close more.
   function closeSelectedWindow() {
     var addr = root.selectedWindow()
@@ -1511,6 +1536,9 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_M && event.modifiers === Qt.ControlModifier && !root.movingWindow) {
             root.startMove()
+            event.accepted = true
+          } else if (event.key === Qt.Key_T && event.modifiers === Qt.AltModifier && !root.movingWindow) {
+            root.terminalAtSelected()
             event.accepted = true
           } else if (event.key === Qt.Key_Up || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier)) || event.key === Qt.Key_Backtab) {
             root.move(-1)

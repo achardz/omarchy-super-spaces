@@ -27,6 +27,12 @@ together, best matches first.
   open from the search, and the ones other apps add to the desktop's recent
   list.
 
+## Files and folders: terminal here
+
+Highlight a folder (or a file) and press **Alt + T** to open a terminal in it
+(or in the file's folder). While typing a path like `~/Projects/`, Alt + T with
+nothing else highlighted opens the terminal in that folder.
+
 ## Windows: close and move
 
 Highlight a window (or an app that's open) and press:

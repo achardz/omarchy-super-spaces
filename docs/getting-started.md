@@ -57,6 +57,7 @@ Now **Super + Space** opens the search, and the Omarchy menu moves to
 | Shift + Enter | the other option (new window, copy instead of paste) |
 | Ctrl + W | close the highlighted window |
 | Ctrl + M | move the highlighted window to another workspace |
+| Alt + T | open a terminal in the highlighted folder (or the highlighted file's folder) |
 | Backspace / Ctrl + U | delete a letter / clear everything |
 | Esc | clear, then close |
 
