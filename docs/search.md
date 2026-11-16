@@ -42,6 +42,12 @@ Highlight a window (or an app that's open) and press:
 - **Ctrl + W** to close it. The search stays open, so you can close more.
 - **Ctrl + M** to move it. Type a workspace number and press **Enter**.
 
+On a window row (including the `sp` and `sp:N` lists), **Shift + Enter** does
+the same as Ctrl + M. On a workspace row ("Go to workspace 4"), Shift + Enter
+(or Ctrl + M) moves **every window on that workspace**: type the number to
+move them to and press **Enter**. Esc cancels. On a running app, Shift + Enter
+still opens a new window.
+
 ## Your own nicknames
 
 Want `ff` to open Firefox? Create `~/.config/omarchy/super-spaces/aliases.json`:

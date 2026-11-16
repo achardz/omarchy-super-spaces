@@ -54,9 +54,9 @@ Now **Super + Space** opens the search, and the Omarchy menu moves to
 |---|---|
 | ↑ / ↓ (or Tab) | move up and down |
 | Enter | open / run the highlighted result |
-| Shift + Enter | the other option (new window, copy instead of paste) |
+| Shift + Enter | the other option: new window for an app, copy instead of paste for a clip, move for a window or workspace |
 | Ctrl + W | close the highlighted window |
-| Ctrl + M | move the highlighted window to another workspace |
+| Ctrl + M | move the highlighted window (or all of a workspace's windows) to another workspace |
 | Alt + T | open a terminal in the highlighted folder (or the highlighted file's folder) |
 | Backspace / Shift + Backspace (or Ctrl + U) | delete a letter / clear everything |
 | Esc | clear, then close |

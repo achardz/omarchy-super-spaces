@@ -1139,7 +1139,7 @@ Item {
           var at = "sp:" + ids[i] + ":" + (k + 1)
           rows.push({ kind: "prefix", title: root.shownText(win.title || root.shortClass(win.cls)),
                       subtitle: root.shortClass(win.cls) + "  ·  " + at, icon: root.appIconFor(win.cls),
-                      glyph: "▦", tag: "Space " + ids[i], payload: at })
+                      glyph: "▦", tag: "Space " + ids[i], payload: at, window: win.address })
         }
       }
       if (rows.length === 0)
@@ -1601,25 +1601,41 @@ Item {
     }
   }
 
-  // Ctrl+M: pick a target workspace for the window, by number.
+  // Ctrl+M, or Shift+Enter on a window or workspace row: pick a target
+  // workspace by number. movingWindow holds the window's address, or
+  // "ws:N" when every window on workspace N moves.
   property string movingWindow: ""
 
+  function movingSpace() {
+    var m = /^ws:(\d{1,2})$/.exec(root.movingWindow)
+    return m ? m[1] : ""
+  }
+
   function startMove() {
-    var addr = root.selectedWindow()
-    if (!addr) return
-    root.movingWindow = addr
+    if (root.selectedIndex < 0 || root.selectedIndex >= displayModel.count) return
+    var row = displayModel.get(root.selectedIndex)
+    if (row.kind === "workspace" && /^\d{1,2}$/.test(String(row.payload))) {
+      root.movingWindow = "ws:" + row.payload
+    } else {
+      var addr = root.selectedWindow()
+      if (!addr) return
+      root.movingWindow = addr
+    }
     root.setFilter("")
   }
 
   function moveRows(rest) {
     var out = []
+    var from = root.movingSpace()
+    var what = from ? "workspace " + from + "'s windows" : "the window"
     var n = /^\s*(\d{1,2})\s*$/.exec(rest)
-    if (n && Number(n[1]) >= 1)
-      out.push({ kind: "move", title: "Move to workspace " + n[1], subtitle: "Enter moves the window there; Esc cancels",
+    if (n && Number(n[1]) >= 1 && n[1] !== from)
+      out.push({ kind: "move", title: "Move to workspace " + n[1], subtitle: "Enter moves " + what + " there; Esc cancels",
                  icon: "", glyph: "→", tag: n[1], payload: n[1] })
     var ids = (Hyprland.workspaces.values || []).map(function(w) { return w.id })
       .filter(function(id) { return id > 0 }).sort(function(a, b) { return a - b })
     for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i]) === from) continue
       if (n && String(ids[i]) === n[1]) continue
       if (rest.trim() && String(ids[i]).indexOf(rest.trim()) !== 0) continue
       out.push({ kind: "move", title: "Move to workspace " + ids[i], subtitle: "Existing workspace",
@@ -1628,8 +1644,19 @@ Item {
     return out
   }
 
+  // Every window on workspace `from` goes to workspace `to`, staying put.
+  function moveSpace(from, to) {
+    var wins = root.spWindows(Number(from))
+    for (var i = 0; i < wins.length; i++) {
+      var addr = wins[i].address.indexOf("0x") === 0 ? wins[i].address : "0x" + wins[i].address
+      if (/^0x[0-9a-fA-F]+$/.test(addr))
+        root.dispatch("hl.dsp.window.move({ window = \"address:" + addr + "\", workspace = \"" + to + "\", follow = false })")
+    }
+  }
+
   // forceNew (Shift+Enter) launches another instance even if the app is open,
-  // and copies a clip instead of pasting it.
+  // copies a clip instead of pasting it, and on a window or workspace row
+  // starts moving it to another workspace.
   function activate(index, forceNew) {
     if (index < 0 || index >= displayModel.count) return
     var row = displayModel.get(index)
@@ -1638,6 +1665,11 @@ Item {
     var title = String(row.title)
     var windowAddress = String(row.window || "")
     if (kind === "info") return
+    if (forceNew && !root.movingWindow && (kind === "window" || kind === "workspace" || (kind === "prefix" && windowAddress))) {
+      root.selectedIndex = index
+      root.startMove()
+      return
+    }
     // A prefix row types its word and keeps the search open.
     if (kind === "prefix") {
       root.setFilter(payload)
@@ -1665,8 +1697,10 @@ Item {
     root.dismiss()
 
     if (kind === "move") {
-      if (moving && /^\d{1,2}$/.test(payload))
-        root.dispatch("hl.dsp.window.move({ window = \"address:" + moving + "\", workspace = \"" + payload + "\", follow = false })")
+      var from = /^ws:(\d{1,2})$/.exec(moving)
+      if (!/^\d{1,2}$/.test(payload)) return
+      if (from) root.moveSpace(from[1], payload)
+      else if (moving) root.dispatch("hl.dsp.window.move({ window = \"address:" + moving + "\", workspace = \"" + payload + "\", follow = false })")
     } else if (kind === "window") {
       root.focusWindow(payload)
     } else if (kind === "workspace") {
@@ -1801,7 +1835,8 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: root.askView ? "Ask " + (root.defaultAgent || "AI") + ": " + root.askQuestion
               : root.filterText || (root.movingWindow
-              ? "Move window to workspace… (type a number)"
+              ? (root.movingSpace() ? "Move workspace " + root.movingSpace() + "'s windows to… (type a number)"
+                                    : "Move window to workspace… (type a number)")
               : "Search windows, apps, files, maths")
             color: root.foreground
             opacity: root.filterText || root.askView ? 1 : 0.58
