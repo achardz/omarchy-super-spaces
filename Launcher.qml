@@ -1002,6 +1002,32 @@ Item {
     return out
   }
 
+  // Words that switch the search to one source: badges under the search box
+  // with nothing typed, and the list ":" shows (":cl" narrows it).
+  readonly property var prefixes: [
+    { label: "keys", fill: "keys ", about: "Omarchy keyboard shortcuts" },
+    { label: "menu", fill: "menu ", about: "Omarchy menu entries" },
+    { label: "clip", fill: "clip ", about: "Clipboard history" },
+    { label: "ai", fill: "ai ", about: "AI agent sessions" },
+    { label: "ask", fill: "ask ", about: "Ask your AI agent (turn it on in settings)" },
+    { label: "settings", fill: "settings", about: "Turn sources on and off" },
+    { label: "~/", fill: "~/", about: "Browse folders, starting at home" }
+  ]
+
+  function prefixRows(rest) {
+    var q = String(rest || "").trim().toLowerCase()
+    var out = []
+    for (var i = 0; i < root.prefixes.length; i++) {
+      var p = root.prefixes[i]
+      if (q && p.label.indexOf(q) !== 0 && p.about.toLowerCase().indexOf(q) < 0) continue
+      out.push({ kind: "prefix", title: p.label, subtitle: p.about, icon: "", glyph: ":", tag: "Prefix", payload: p.fill })
+    }
+    if (out.length === 0)
+      out.push({ kind: "info", title: "No prefix matches “" + q + "”", subtitle: "Type : on its own to see them all",
+                 icon: "", glyph: ":", tag: "", payload: "" })
+    return out
+  }
+
   function rebuild() {
     var query = root.filterText
     var words = root.terms(query)
@@ -1016,6 +1042,16 @@ Item {
       fileSearch.running = false
       rows = root.moveRows(query)
       root.showRows(rows)
+      return
+    }
+
+    // ":" lists the prefixes; Enter types the highlighted one.
+    if (/^\s*:/.test(query)) {
+      root.fileGeneration++
+      fileDebounce.stop()
+      folderSearch.running = false
+      fileSearch.running = false
+      root.showRows(root.prefixRows(query.replace(/^\s*:/, "")))
       return
     }
 
@@ -1439,6 +1475,11 @@ Item {
     var title = String(row.title)
     var windowAddress = String(row.window || "")
     if (kind === "info") return
+    // A prefix row types its word and keeps the search open.
+    if (kind === "prefix") {
+      root.setFilter(payload)
+      return
+    }
     // Switching a source keeps the search open to flip more.
     if (kind === "toggle") {
       root.toggleSource(payload)
@@ -1610,15 +1651,7 @@ Item {
           spacing: Style.space(6)
 
           Repeater {
-            model: [
-              { label: "keys", fill: "keys " },
-              { label: "menu", fill: "menu " },
-              { label: "clip", fill: "clip " },
-              { label: "ai", fill: "ai " },
-              { label: "ask", fill: "ask " },
-              { label: "settings", fill: "settings" },
-              { label: "~/", fill: "~/" }
-            ]
+            model: root.prefixes
             delegate: Rectangle {
               required property var modelData
               width: prefixText.implicitWidth + Style.space(12)
