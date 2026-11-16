@@ -651,8 +651,8 @@ Item {
   property int contentMargin: Style.spacing.panelPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int rowHeight: Math.max(Style.space(52), Style.font.body + Style.font.caption + Style.spacing.rowPaddingX * 2)
-  property int cardWidth: Math.min(Style.space(640), panel.width - Style.gapsOut * 2)
-  property int cardHeight: Math.min(Style.space(560), panel.height - Style.gapsOut * 2)
+  property int cardWidth: Math.min(Style.space(640), panel.windowWidth - Style.gapsOut * 2)
+  property int cardHeight: Math.min(Style.space(560), panel.windowHeight - Style.gapsOut * 2)
 
   // ---- lifecycle -------------------------------------------------------
 
@@ -1221,17 +1221,11 @@ Item {
 
   // ---- UI --------------------------------------------------------------
 
-  // Use the standard Quickshell surface, as Omarchy's clipboard does.
-  // OverlayWindow is not available on supported Quickshell 0.3.2 installs.
-  PanelWindow {
+  // OverlayWindow where the shell has it, PanelWindow otherwise (Surface.qml).
+  Surface {
     id: panel
-    visible: root.opened
-    anchors { top: true; bottom: true; left: true; right: true }
-    color: "transparent"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-    exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "anz-super-spaces-search"
+    shown: root.opened
+    namespace: "anz-super-spaces-search"
 
     Rectangle { anchors.fill: parent; color: root.scrim }
     MouseArea { anchors.fill: parent; onClicked: root.dismiss() }
