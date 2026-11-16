@@ -793,8 +793,13 @@ Item {
     shortcutList.running = true
     whichAgent.running = true
     root.opened = true
-    // An answer still loading (or shown) when the search was closed comes back.
-    if (!root.askView) root.setFilter("")
+    // An answer still loading (or shown) when the search was closed comes
+    // back. `omarchy-shell shell toggle anz.super-spaces '{"query":"sp:2"}'`
+    // opens with that text typed (a keybinding can open "sp:" directly).
+    var start = ""
+    try { start = String(JSON.parse(payloadJson || "{}").query || "") } catch (e) {}
+    if (start) root.setFilter(start)
+    else if (!root.askView) root.setFilter("")
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -1011,6 +1016,7 @@ Item {
     { label: "ai", fill: "ai ", about: "AI agent sessions" },
     { label: "ask", fill: "ask ", about: "Ask your AI agent (turn it on in settings)" },
     { label: "settings", fill: "settings", about: "Turn sources on and off" },
+    { label: "sp:", fill: "sp:", about: "A workspace's windows as thumbnails: sp:2, then sp:2:1 picks the first" },
     { label: "~/", fill: "~/", about: "Browse folders, starting at home" }
   ]
 
@@ -1028,11 +1034,83 @@ Item {
     return out
   }
 
+  // ---- "sp:N" and "sp:N:I": a workspace's windows, with thumbnails -------
+  // "sp:" lists the workspaces that have windows; "sp:2" lists workspace 2's
+  // windows, numbered left to right, above a thumbnail of the workspace laid
+  // out as on screen; "sp:2:3" highlights the third. Enter (or a click on a
+  // thumbnail) goes to that window.
+  property var spPreview: null
+
+  function spQuery(query) {
+    var m = /^\s*sp:(\d{1,2})?(?::(\d{0,2}))?\s*$/i.exec(String(query || ""))
+    return m ? { ws: m[1] ? Number(m[1]) : 0, index: m[2] ? Number(m[2]) : 0 } : null
+  }
+
+  function spWindows(ws) {
+    var out = []
+    var values = Hyprland.toplevels.values || []
+    for (var i = 0; i < values.length; i++) {
+      var t = values[i]
+      var ipc = t.lastIpcObject || {}
+      if (!ipc.workspace || Number(ipc.workspace.id) !== ws || !ipc.at || !ipc.size || ipc.hidden) continue
+      out.push({ toplevel: t, address: String(t.address || ipc.address || ""),
+                 x: Number(ipc.at[0]), y: Number(ipc.at[1]), w: Number(ipc.size[0]), h: Number(ipc.size[1]),
+                 cls: String(ipc.class || ""), title: String(t.title || ipc.title || ""), floating: !!ipc.floating })
+    }
+    out.sort(function(a, b) { return a.x - b.x || a.y - b.y })
+    return out
+  }
+
+  function spRows(sp) {
+    var rows = []
+    if (!sp.ws) {
+      var ids = (Hyprland.workspaces.values || []).map(function(w) { return w.id })
+        .filter(function(id) { return id > 0 }).sort(function(a, b) { return a - b })
+      for (var i = 0; i < ids.length; i++) {
+        var n = root.spWindows(ids[i]).length
+        if (n === 0) continue
+        rows.push({ kind: "prefix", title: "sp:" + ids[i], subtitle: n + (n === 1 ? " window" : " windows"),
+                    icon: "", glyph: "▦", tag: "Space " + ids[i], payload: "sp:" + ids[i] })
+      }
+      if (rows.length === 0)
+        rows.push({ kind: "info", title: "No windows open", subtitle: "", icon: "", glyph: "▦", tag: "", payload: "" })
+      return rows
+    }
+
+    var space = (Hyprland.workspaces.values || []).filter(function(w) { return w.id === sp.ws })[0]
+    var m = space && space.monitor ? (space.monitor.lastIpcObject || {}) : {}
+    var scale = Number(m.scale || 1)
+    var monW = Number(m.width || 1920) / scale
+    var monH = Number(m.height || 1080) / scale
+    if (Number(m.transform || 0) % 2 === 1) { var t = monW; monW = monH; monH = t }
+    var monX = Number(m.x || 0), monY = Number(m.y || 0)
+    var wins = root.spWindows(sp.ws)
+    root.spPreview = {
+      ws: sp.ws, monW: monW, monH: monH,
+      live: !!(m.activeWorkspace && Number(m.activeWorkspace.id) === sp.ws),
+      windows: wins.map(function(w) {
+        return { toplevel: w.toplevel, x: w.x - monX, y: w.y - monY, w: w.w, h: w.h, floating: w.floating }
+      })
+    }
+    for (var j = 0; j < wins.length; j++) {
+      var w = wins[j]
+      rows.push({ kind: "window", title: (j + 1) + "   " + root.shownText(w.title || root.shortClass(w.cls)),
+                  subtitle: root.shortClass(w.cls) + "  ·  workspace " + sp.ws, icon: root.appIconFor(w.cls),
+                  glyph: "", tag: String(sp.ws), payload: w.address })
+    }
+    if (wins.length === 0)
+      rows.push({ kind: "info", title: "Workspace " + sp.ws + " has no windows", subtitle: "", icon: "", glyph: "▦", tag: "", payload: "" })
+    rows.push({ kind: "workspace", title: "Go to workspace " + sp.ws, subtitle: "Switch to workspace " + sp.ws,
+                icon: "", glyph: "#", tag: String(sp.ws), payload: String(sp.ws) })
+    return rows
+  }
+
   function rebuild() {
     var query = root.filterText
     var words = root.terms(query)
     var rows = []
     root.windowIndex = null
+    root.spPreview = null
 
     // Ctrl+M on a window: the list becomes target workspaces.
     if (root.movingWindow) {
@@ -1042,6 +1120,19 @@ Item {
       fileSearch.running = false
       rows = root.moveRows(query)
       root.showRows(rows)
+      return
+    }
+
+    // "sp:N[:I]": that workspace's windows with thumbnails.
+    var sp = root.spQuery(query)
+    if (sp) {
+      root.fileGeneration++
+      fileDebounce.stop()
+      folderSearch.running = false
+      fileSearch.running = false
+      root.showRows(root.spRows(sp))
+      if (sp.index > 0 && root.spPreview && sp.index <= root.spPreview.windows.length)
+        root.selectedIndex = sp.index - 1
       return
     }
 
@@ -1686,12 +1777,85 @@ Item {
           }
         }
 
+        // "sp:N": the workspace laid out as on screen, each window a screen
+        // copy, numbered as in the list. Live only for the workspace on
+        // screen; others are one still copy each. Hover highlights, a click
+        // goes to the window.
+        Rectangle {
+          id: spBox
+          readonly property var p: root.spPreview
+          visible: !root.askView && p !== null && p.windows.length > 0
+          width: parent.width
+          height: visible ? Math.min(width * p.monH / p.monW, (parent.height - root.headerHeight) * 0.45) : 0
+          radius: root.cornerRadius
+          color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+          readonly property real s: visible ? Math.min((width - Style.space(16)) / p.monW, (height - Style.space(16)) / p.monH) : 1
+
+          Item {
+            width: spBox.visible ? spBox.p.monW * spBox.s : 0
+            height: spBox.visible ? spBox.p.monH * spBox.s : 0
+            anchors.centerIn: parent
+
+            Repeater {
+              model: spBox.visible ? spBox.p.windows : []
+              delegate: Item {
+                id: spThumb
+                required property var modelData
+                required property int index
+                readonly property bool picked: index === root.selectedIndex
+                x: modelData.x * spBox.s
+                y: modelData.y * spBox.s
+                width: modelData.w * spBox.s
+                height: modelData.h * spBox.s
+                z: modelData.floating ? 1 : 0
+
+                ScreencopyView {
+                  anchors.fill: parent
+                  captureSource: spThumb.modelData.toplevel.wayland
+                  live: spBox.p.live
+                }
+                Rectangle {
+                  anchors.fill: parent
+                  color: spThumb.picked ? "transparent" : Qt.rgba(0, 0, 0, 0.35)
+                  border.width: spThumb.picked ? Style.space(2) : 1
+                  border.color: spThumb.picked ? Commons.Color.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.3)
+                }
+                Rectangle {
+                  x: Style.space(4)
+                  y: Style.space(4)
+                  width: spNum.implicitWidth + Style.space(10)
+                  height: spNum.implicitHeight + Style.space(2)
+                  radius: height / 2
+                  color: spThumb.picked ? Commons.Color.accent : root.background
+                  Text {
+                    id: spNum
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: String(spThumb.index + 1)
+                    color: spThumb.picked ? root.background : root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onEntered: root.selectedIndex = spThumb.index
+                  onClicked: root.activate(spThumb.index, false)
+                }
+              }
+            }
+          }
+        }
+
         ListView {
           visible: !root.askView
           id: resultList
           width: parent.width
           height: parent.height - root.headerHeight - Style.spacing.md
             - (prefixBadges.visible ? prefixBadges.height + Style.spacing.md : 0)
+            - (spBox.visible ? spBox.height + Style.spacing.md : 0)
           model: displayModel
           clip: true
           boundsBehavior: Flickable.StopAtBounds
