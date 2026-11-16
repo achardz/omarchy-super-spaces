@@ -1588,17 +1588,71 @@ Item {
           Text {
             textFormat: Text.PlainText
             anchors.left: parent.left
-            anchors.right: parent.right
+            anchors.right: prefixBadges.visible ? prefixBadges.left : parent.right
+            anchors.rightMargin: prefixBadges.visible ? Style.spacing.md : 0
             anchors.verticalCenter: parent.verticalCenter
             text: root.askView ? "Ask " + (root.defaultAgent || "AI") + ": " + root.askQuestion
               : root.filterText || (root.movingWindow
               ? "Move window to workspace… (type a number)"
-              : "Search windows, apps, files, maths — or “keys”, “menu”, “clip”, “ask” …")
+              : "Search windows, apps, files, maths — or start with")
             color: root.foreground
             opacity: root.filterText || root.askView ? 1 : 0.58
             font.family: root.fontFamily
             font.pixelSize: Style.font.heading
             elide: Text.ElideRight
+          }
+
+          // With nothing typed, the words that switch the search to one source,
+          // as small badges; clicking one types it.
+          Row {
+            id: prefixBadges
+            visible: !root.filterText && !root.askView && !root.movingWindow
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(6)
+
+            Repeater {
+              model: [
+                { label: "keys", fill: "keys " },
+                { label: "menu", fill: "menu " },
+                { label: "clip", fill: "clip " },
+                { label: "ai", fill: "ai " },
+                { label: "ask", fill: "ask " },
+                { label: "settings", fill: "settings" },
+                { label: "~/", fill: "~/" }
+              ]
+              delegate: Rectangle {
+                required property var modelData
+                width: prefixText.implicitWidth + Style.space(12)
+                height: prefixText.implicitHeight + Style.space(4)
+                radius: height / 2
+                color: "transparent"
+                border.width: 1
+                border.color: root.foreground
+                opacity: prefixMouse.containsMouse ? 0.9 : 0.5
+
+                Text {
+                  id: prefixText
+                  anchors.centerIn: parent
+                  textFormat: Text.PlainText
+                  text: modelData.label
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                MouseArea {
+                  id: prefixMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    root.setFilter(modelData.fill)
+                    keyCatcher.forceActiveFocus()
+                  }
+                }
+              }
+            }
           }
         }
 
