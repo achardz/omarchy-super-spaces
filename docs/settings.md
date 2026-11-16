@@ -33,6 +33,17 @@ window or workspace to go there, Escape or the background closes it.
 when four or five fingers pinch in. Flipping any of them reloads your
 Hyprland config.
 
+The overview also has a key-only way in, with or without the trackpad
+setting: bind the global shortcut `anz-super-spaces:overview-toggle` (it opens
+this workspace's windows, and closes the overview again). In
+`~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("F3", "Super Spaces overview", hl.dsp.global("anz-super-spaces:overview-toggle"))
+```
+
+Inside the overview, Up shows every workspace and Down steps back.
+
 Hyprland only accepts gestures while it reads its config, so they need this
 in `~/.config/hypr/input.lua` once:
 

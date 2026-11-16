@@ -170,6 +170,15 @@ Item {
     onPressed: ov.down()
   }
 
+  // A key that opens the overview (like one swipe up) and closes it again
+  // (like swiping back down), for keyboards without the trackpad gesture.
+  GlobalShortcut {
+    appid: "anz-super-spaces"
+    name: "overview-toggle"
+    description: "Overview: open this workspace's windows, or close"
+    onPressed: ov.stage === 0 ? ov.open() : ov.close()
+  }
+
   Connections {
     target: Hyprland
     enabled: ov.stage > 0
