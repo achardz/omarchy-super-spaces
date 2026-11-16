@@ -5,6 +5,7 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "Safe.js" as Safe
 
 BarWidget {
   id: root
@@ -170,9 +171,12 @@ BarWidget {
     if (root.bar) root.bar.run("hyprctl dispatch " + Util.shellQuote(expression))
   }
 
+  // The monitor name goes inside a Lua string, so only a plain connector
+  // name is used; anything else focuses the workspace by id instead.
   function focusWorkspace(id) {
-    if (root.blockOf(id) === root.block) {
-      root.dispatch("o.workspaces.focus(" + root.slotOf(id) + ", \"" + root.monitorName + "\")")
+    var monitor = Safe.monitorName(root.monitorName)
+    if (monitor && root.blockOf(id) === root.block) {
+      root.dispatch("o.workspaces.focus(" + root.slotOf(id) + ", \"" + monitor + "\")")
     } else {
       root.dispatch("hl.dsp.focus({ workspace = \"" + id + "\" })")
     }
@@ -246,8 +250,9 @@ BarWidget {
   function cycleLayout() {
     if (!root.bar) return
     var command = "omarchy-hyprland-workspace-layout-toggle"
-    if (root.monitor && !root.monitor.focused) {
-      command = "hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ monitor = \"" + root.monitorName + "\" })") + " >/dev/null && " + command
+    var monitor = Safe.monitorName(root.monitorName)
+    if (monitor && root.monitor && !root.monitor.focused) {
+      command = "hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ monitor = \"" + monitor + "\" })") + " >/dev/null && " + command
     }
     root.bar.run(command)
   }

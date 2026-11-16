@@ -10,6 +10,7 @@ import qs.Ui
 import "Calc.js" as Calc
 import "MenuSource.js" as MenuSource
 import "Gestures.js" as Gestures
+import "Safe.js" as Safe
 
 // Super Spaces search: one box for open windows (by app, title or workspace),
 // apps, files and quick maths. It runs inside the Omarchy shell that is
@@ -164,7 +165,7 @@ Item {
       if (words.length > 0 && !root.matchesAll(text, words)) continue
       var flat = text.replace(/\s+/g, " ").trim()
       var lines = text.split("\n").length
-      out.push({ kind: "clip", title: flat.length > 90 ? flat.slice(0, 90) + "…" : flat,
+      out.push({ kind: "clip", title: root.shownText(flat.length > 90 ? flat.slice(0, 90) + "…" : flat),
                  subtitle: (isImage ? "Image" : (lines > 1 ? lines + " lines" : text.length + " characters"))
                    + "  ·  Enter pastes, Shift+Enter copies",
                  icon: "", glyph: isImage ? "▣" : "❐", tag: "Clip", payload: JSON.stringify(isImage
@@ -614,7 +615,7 @@ Item {
         if (code === 3) {
           // No non-interactive mode for this agent: hand over to Omarchy.
           root.askView = false
-          Quickshell.execDetached(["omarchy-agent-prompt", root.askQuestion])
+          Quickshell.execDetached(["omarchy-agent-prompt", root.promptArg()])
           root.dismiss()
           return
         }
@@ -669,10 +670,16 @@ Item {
   // Ctrl+O: keep going with the default agent in a terminal.
   function continueAskInTerminal() {
     if (!root.askQuestion) return
-    Quickshell.execDetached(["omarchy-agent-prompt", root.askQuestion])
+    Quickshell.execDetached(["omarchy-agent-prompt", root.promptArg()])
     root.dismiss()
   }
 
+  // omarchy-agent-prompt reads a first argument of "--inline" as an option
+  // and takes no "--", so a question starting with "-" gets a plain prefix.
+  function promptArg() {
+    var q = String(root.askQuestion)
+    return q.charAt(0) === "-" ? "Question: " + q : q
+  }
 
   function agentQuery(query) {
     var m = /^\s*(ai|agents?|sessions?)(?:\s+(.*))?$/i.exec(String(query || ""))
@@ -693,8 +700,8 @@ Item {
       var s = root.agentSessions[i]
       if (words.length > 0 && !root.matchesAll(s.agent + " " + s.title + " " + s.cwd + " " + s.id, words)) continue
       var where = s.cwd.indexOf(root.home) === 0 ? "~" + s.cwd.slice(root.home.length) : s.cwd
-      out.push({ kind: "agent", title: s.title || ("Session " + s.id.slice(0, 8)),
-                 subtitle: s.agent + "  ·  " + (where || "~") + "  ·  " + root.ago(s.time),
+      out.push({ kind: "agent", title: root.shownText(s.title || ("Session " + s.id.slice(0, 8))),
+                 subtitle: root.shownText(s.agent + "  ·  " + (where || "~") + "  ·  " + root.ago(s.time)),
                  icon: "", glyph: "✦", tag: "Agent",
                  payload: JSON.stringify({ agent: s.agent, id: s.id, cwd: s.cwd }) })
     }
@@ -704,11 +711,12 @@ Item {
     return out
   }
 
-  // Resume command per agent; ids are checked so nothing odd reaches argv.
+  // Resume command per agent; ids are checked so nothing odd reaches argv
+  // (and can't start with "-", which the agent would read as an option).
   function resumeAgent(payload) {
     var s
     try { s = JSON.parse(payload) } catch (e) { return }
-    if (!s || !/^[A-Za-z0-9_-]+$/.test(String(s.id))) return
+    if (!s || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(String(s.id))) return
     var cmd = s.agent === "omp" ? ["omp", "--resume", s.id]
       : s.agent === "claude" ? ["claude", "--resume", s.id]
       : s.agent === "codex" ? ["codex", "resume", s.id]
@@ -736,7 +744,14 @@ Item {
       var m
       var text = String(systemRecent.text())
       while ((m = re.exec(text)) !== null) {
-        try { out.push({ path: decodeURIComponent(m[1]), last: Date.parse(m[2]) || 0 }) } catch (e) {}
+        // The href is XML-escaped and URL-encoded; only absolute paths count
+        // ("file://host/x" would decode to a path relative to the shell).
+        try {
+          var path = decodeURIComponent(m[1].replace(/&quot;/g, "\"").replace(/&apos;/g, "'")
+            .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"))
+          if (path.charAt(0) === "/" && path.indexOf("\u0000") < 0)
+            out.push({ path: path, last: Date.parse(m[2]) || 0 })
+        } catch (e) {}
       }
       out.sort(function(a, b) { return b.last - a.last })
       root.recentSystem = out.slice(0, 200)
@@ -927,7 +942,7 @@ Item {
       var title = String(t.title || "")
       var hay = app + " " + cls + " " + title + " workspace " + ws + " space " + ws
       if (words.length > 0 && !root.matchesAll(hay, words)) continue
-      out.push({ kind: "window", title: title || app, subtitle: app + "  ·  workspace " + ws,
+      out.push({ kind: "window", title: root.shownText(title || app), subtitle: root.shownText(app) + "  ·  workspace " + ws,
                  icon: root.appIconFor(cls), glyph: "", tag: String(ws), payload: String(t.address || "") })
     }
     out.sort(function(a, b) { return Number(a.tag) - Number(b.tag) })
@@ -1328,11 +1343,10 @@ Item {
       .map(function(l) { return l.length > 1 ? l.replace(/\/$/, "") : l })
   }
 
-  // Names are chosen by whoever made the file: control characters and bidi
-  // overrides could make one read as another ("doc<RLO>fdp.exe" shows as
-  // "docexe.pdf"), so they are shown as "?". The payload keeps the real path.
+  // Text other people choose is shown through Safe.shown (control and bidi
+  // characters as "?"); payloads keep the real value.
   function shownText(s) {
-    return String(s).replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "?")
+    return Safe.shown(s)
   }
 
   function appendPaths(text, isDir) {

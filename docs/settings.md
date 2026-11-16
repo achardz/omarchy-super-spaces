@@ -72,6 +72,11 @@ do
 end
 ```
 
+This snippet reads `settings.json` directly, without the private-folder check
+the plugin uses. It only looks for three `true` flags, so the worst a
+tampered file can do is switch gestures on or off; keep
+`~/.config/omarchy/super-spaces` writable only by you (it is by default).
+
 ## Where things are saved
 
 | File | What's in it |

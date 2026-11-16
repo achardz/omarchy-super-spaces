@@ -7,6 +7,7 @@ Requires quickshell and fd.
 """
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -50,6 +51,7 @@ with tempfile.TemporaryDirectory(prefix='ss-path-') as d:
     qml = '''import Quickshell
 import Quickshell.Io
 import QtQuick
+import "Safe.js" as Safe
 ShellRoot {
  id: root
  property string home: Quickshell.env("HOME")
@@ -80,6 +82,7 @@ ShellRoot {
 }
 '''
     (tmp / 'shell.qml').write_text(qml)
+    shutil.copy(repo / 'Safe.js', tmp / 'Safe.js')
     env = {k: v for k, v in os.environ.items()
            if k not in ('DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE')}
     env.update(HOME=str(tmp), XDG_RUNTIME_DIR=str(tmp / 'runtime'),

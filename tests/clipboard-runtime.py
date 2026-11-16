@@ -36,6 +36,7 @@ with tempfile.TemporaryDirectory(prefix='ss-clipboard-runtime-') as directory:
     harness = '''import Quickshell
 import Quickshell.Io
 import QtQuick
+import "Safe.js" as Safe
 ShellRoot {
  id: root
  property string home: Quickshell.env("HOME")
@@ -48,7 +49,7 @@ ShellRoot {
  ListModel { id: displayModel }
 '''
     harness += watcher + process + '\n'.join(function(n) for n in
-                  ['terms','matchesAll','clipRows','useClip','showRows','pathQuery','typedPath','activate'])
+                  ['terms','matchesAll','shownText','clipRows','useClip','showRows','pathQuery','typedPath','activate'])
     harness += '''
  Timer { interval: 500; running: true; onTriggered: {
    root.showRows(root.clipRows("PUBLIC_HELLO")); console.log("RENDERED");
@@ -61,6 +62,7 @@ ShellRoot {
 }
 '''
     (tmp / 'shell.qml').write_text(harness)
+    shutil.copy(repo / 'Safe.js', tmp / 'Safe.js')
     env = os.environ.copy()
     for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']:
         env.pop(key, None)

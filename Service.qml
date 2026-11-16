@@ -10,11 +10,13 @@ import "Gestures.js" as Gestures
 Item {
   id: root
 
-  FileView {
-    path: Quickshell.env("HOME") + "/.config/omarchy/super-spaces/settings.json"
-    printErrors: false
-    onLoaded: root.sync(text())
-    onLoadFailed: root.sync("")
+  // Read through bin/private-json, like the search does: when the settings
+  // folder isn't private to this user, nothing is read and the gestures stay
+  // at their defaults (off).
+  Process {
+    running: true
+    command: [decodeURIComponent(String(Qt.resolvedUrl("bin")).replace(/^[a-z]+:\/\//, "")) + "/private-json", "load", "settings"]
+    stdout: StdioCollector { onStreamFinished: root.sync(text) }
   }
 
   function sync(text) {

@@ -43,29 +43,36 @@ private_dir() {
 }
 
 mkdir -p -- "$parent"
-[[ -e $dir || -L $dir ]] || mkdir -m 700 -- "$dir"
+# Two callers may create it at once on first run; the checks below decide.
+[[ -e $dir || -L $dir ]] || mkdir -m 700 -- "$dir" 2>/dev/null || [[ -d $dir ]]
 if ! private_dir "$parent" || ! private_dir "$dir"; then
   echo "anz.super-spaces: $dir is not a private directory; not using $file" >&2
   exit 2
 fi
 
+# Work from inside the checked directory, by relative names, so swapping a
+# path component after the check (someone able to rename in a folder above)
+# can't move the reads and writes elsewhere.
+cd -P -- "$dir" && private_dir . || exit 2
+name=${file##*/}
+
 case $1 in
   load)
-    if [[ ! -e $file && ! -L $file ]]; then
+    if [[ ! -e $name && ! -L $name ]]; then
       echo '{}'
-    elif [[ -f $file && ! -L $file ]]; then
-      head -c 1048576 -- "$file"
+    elif [[ -f $name && ! -L $name ]]; then
+      head -c 1048576 -- "$name"
     else
       exit 3
     fi
     ;;
   save)
     IFS= read -r json || exit 1
-    tmp=$(mktemp -- "$dir/.${file##*/}.XXXXXX")
+    tmp=$(mktemp -- "./.$name.XXXXXX")
     trap 'rm -f -- "$tmp"' EXIT
     jq -e "${format[@]}" <<<"$json" >"$tmp" 2>/dev/null || exit 1
     jq -e 'type == "object"' "$tmp" >/dev/null || exit 1
-    mv -fT -- "$tmp" "$file"
+    mv -fT -- "$tmp" "$name"
     trap - EXIT
     ;;
   *)

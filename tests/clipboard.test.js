@@ -13,6 +13,10 @@ function qmlFunction(name) {
   assert.notEqual(start, -1);
   return source.slice(start, source.indexOf('\n  }', start) + 4);
 }
+// Safe.js is a QML ".pragma library"; load its functions as a plain object.
+const Safe = {};
+new Function('exports', fs.readFileSync(path.join(repo, 'Safe.js'), 'utf8').replace(/^\.pragma library\s*$/m, '')
+  + '\nexports.shown = shown; exports.monitorName = monitorName;')(Safe);
 function launcher() {
   let rows = [];
   const proc = { running: false, snapshot: '', command: [] };
@@ -22,8 +26,9 @@ function launcher() {
       append(row) { rows.push({...row}); }, set(i,row) { rows[i] = {...row}; }, remove(i,n) { rows.splice(i,n); } },
     Quickshell: { env() { return ''; }, execDetached() {} } };
   context.root = context;
+  context.Safe = Safe;
   vm.createContext(context);
-  vm.runInContext(['terms', 'matchesAll', 'clipRows', 'showRows', 'useClip', 'pathQuery', 'typedPath', 'activate'].map(qmlFunction).join('\n'), context);
+  vm.runInContext(['terms', 'matchesAll', 'shownText', 'clipRows', 'showRows', 'useClip', 'pathQuery', 'typedPath', 'activate'].map(qmlFunction).join('\n'), context);
   return context;
 }
 const secret = {type:'text', text:'SYNTHETIC_PRIVATE'};

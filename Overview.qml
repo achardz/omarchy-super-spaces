@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "Safe.js" as Safe
 
 // Mission Control style overview, stepped by the "swipeUp" trackpad setting
 // (Hyprland config binds three fingers up/down to the global shortcuts
@@ -218,6 +219,7 @@ Item {
       readonly property var targets: ov.layout(ov.windows, width, height)
 
       Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: ov.windows.length === 0 && ov.spread
         text: "No windows on this workspace"
@@ -260,12 +262,15 @@ Item {
           }
 
           Text {
+            textFormat: Text.PlainText
             anchors.top: parent.bottom
             anchors.topMargin: Style.space(6)
             anchors.horizontalCenter: parent.horizontalCenter
             width: Math.min(implicitWidth, parent.width)
             elide: Text.ElideRight
-            text: thumb.modelData.title
+            // A title is whatever the app (or a web page) sets: plain text,
+            // never markup, with control and bidi characters shown as "?".
+            text: Safe.shown(thumb.modelData.title)
             color: ov.text
             font.pixelSize: Style.font.body
             opacity: ov.spread ? 1 : 0
@@ -347,6 +352,7 @@ Item {
             }
 
             Text {
+              textFormat: Text.PlainText
               anchors.horizontalCenter: parent.horizontalCenter
               text: String(cell.modelData.slot)
               color: ov.text
