@@ -23,7 +23,7 @@ function launcher() {
     Quickshell: { env() { return ''; }, execDetached() {} } };
   context.root = context;
   vm.createContext(context);
-  vm.runInContext(['terms', 'matchesAll', 'clipRows', 'showRows', 'useClip', 'activate'].map(qmlFunction).join('\n'), context);
+  vm.runInContext(['terms', 'matchesAll', 'clipRows', 'showRows', 'useClip', 'pathQuery', 'typedPath', 'activate'].map(qmlFunction).join('\n'), context);
   return context;
 }
 const secret = {type:'text', text:'SYNTHETIC_PRIVATE'};

@@ -13,6 +13,7 @@ together, best matches first.
 | part of a window's title | that window, wherever it is |
 | `space 3` | the windows on workspace 3 |
 | part of a file or folder name | recent files first, then anything in your home folder |
+| a path like `/`, `~` or `~/Documents/` | the folders inside it. Start typing a name (`~/Documents/re`) to see files starting with it too, and `.` for hidden ones. **Enter** on a folder goes into it, **Shift + Enter** opens it |
 | a sum like `12*7` or `(1+2)^3` | the answer; **Enter** copies it |
 | a number like `14` | "Go to workspace 14" |
 | anything | a **Search the web** row at the bottom, opening your browser |

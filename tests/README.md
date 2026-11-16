@@ -39,3 +39,11 @@ file and read back, that a planted link is replaced rather than followed, and
 that recent files never reach disk. It runs the same checks on
 `~/.config/omarchy/super-spaces/settings.json`, and checks that recent files and
 the bar fold survive `Quickshell.reload()`.
+
+## Paths
+
+With Quickshell and fd installed, run `python3 tests/path-runtime.py`. It runs
+the real path code from `Launcher.qml` offscreen against a folder of 5000
+files: a bare folder path lists folders only, a started name lists folders
+then files starting with it, hidden entries appear only after a `.`, results
+stop at 200 with a note, and a missing folder says so.

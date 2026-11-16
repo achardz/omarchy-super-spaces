@@ -48,7 +48,7 @@ ShellRoot {
  ListModel { id: displayModel }
 '''
     harness += watcher + process + '\n'.join(function(n) for n in
-                  ['terms','matchesAll','clipRows','useClip','showRows','activate'])
+                  ['terms','matchesAll','clipRows','useClip','showRows','pathQuery','typedPath','activate'])
     harness += '''
  Timer { interval: 500; running: true; onTriggered: {
    root.showRows(root.clipRows("PUBLIC_HELLO")); console.log("RENDERED");

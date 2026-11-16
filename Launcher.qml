@@ -1019,6 +1019,13 @@ Item {
       return
     }
 
+    // A path ("/", "~", "~/Doc…") lists the next level of that folder.
+    var path = root.pathQuery(query)
+    if (path) {
+      root.schedulePath(path)
+      return
+    }
+
     // "keys …", "menu …", "clip …", "ai …" and "settings" each search one
     // source only.
     var keysRest = root.shortcutQuery(query)
@@ -1176,6 +1183,126 @@ Item {
     }
   }
 
+  // ---- paths: "/", "~" and "~/Doc…" list the next level of a folder ------
+  // Folders only until a letter of the next name is typed: a big folder can
+  // hold thousands of files, and listing and drawing them all for "/" or
+  // "~/Downloads/" would stall the search. fd stops after maxPathRows; the
+  // rows are sorted here. Enter goes into a folder, Shift+Enter opens it.
+  readonly property int maxPathRows: 200
+  property var pathRequest: null
+  property var pathFolders: []
+
+  // { dir: absolute folder, typedDir: as typed ("~/Doc/"), prefix: the part
+  // of the next name typed so far }, or null when the query isn't a path.
+  function pathQuery(query) {
+    var q = String(query || "")
+    if (!/^(\/|~$|~\/)/.test(q)) return null
+    var cut = q.lastIndexOf("/")
+    var typedDir = cut < 0 ? "~/" : q.slice(0, cut + 1)
+    var dir = typedDir.charAt(0) === "~" ? root.home + typedDir.slice(1) : typedDir
+    return { dir: dir, typedDir: typedDir, prefix: cut < 0 ? "" : q.slice(cut + 1) }
+  }
+
+  // A full path written the way the query writes it: "~/…" when typed with ~.
+  function typedPath(full, path) {
+    if (path.typedDir.charAt(0) === "~" && (full === root.home || full.indexOf(root.home + "/") === 0))
+      return "~" + full.slice(root.home.length)
+    return full
+  }
+
+  // Names starting with what was typed, case-insensitive; hidden ones only
+  // once a "." is typed. Arguments go straight to fd, never through a shell.
+  function pathCommand(path, type) {
+    var cmd = ["fd", "--exact-depth", "1", "--type", type, "--max-results", String(root.maxPathRows),
+               "--no-ignore", "--ignore-case", "--absolute-path", "--color", "never"]
+    if (path.prefix.charAt(0) === ".") cmd.push("--hidden")
+    cmd.push("--", "^" + path.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), path.dir)
+    return cmd
+  }
+
+  function schedulePath(path) {
+    fileDebounce.stop()
+    root.fileGeneration++
+    folderSearch.running = false
+    fileSearch.running = false
+    pathFolderList.running = false
+    pathFileList.running = false
+    root.pathRequest = path
+    pathDebounce.restart()
+  }
+
+  function pathLines(text) {
+    var lines = String(text).split("\n").filter(function(l) { return l.length > 0 })
+      .map(function(l) { return l.replace(/\/$/, "") })
+    return lines.sort(function(a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0 })
+  }
+
+  function showPathRows(folders, files) {
+    var path = root.pathRequest
+    var rows = []
+    function add(list, isDir) {
+      for (var i = 0; i < list.length; i++) {
+        var full = list[i]
+        rows.push({ kind: "file", title: full.slice(full.lastIndexOf("/") + 1), subtitle: root.typedPath(full, path),
+                    icon: "", glyph: isDir ? "▸" : "·", tag: isDir ? "Folder" : "File", payload: full })
+      }
+    }
+    add(folders, true)
+    add(files, false)
+    if (rows.length === 0)
+      rows.push({ kind: "info", title: path.prefix ? "Nothing here starts with “" + path.prefix + "”" : "No folders here",
+                  subtitle: path.prefix ? path.typedDir : "Type the start of a name to see files too",
+                  icon: "", glyph: "▸", tag: "", payload: "" })
+    else if (folders.length >= root.maxPathRows || files.length >= root.maxPathRows)
+      rows.push({ kind: "info", title: "Showing the first " + root.maxPathRows, subtitle: "Type more of the name to narrow it down",
+                  icon: "", glyph: "…", tag: "", payload: "" })
+    else if (!path.prefix)
+      rows.push({ kind: "info", title: "Folders only", subtitle: "Type the start of a name to see files too",
+                  icon: "", glyph: "▸", tag: "", payload: "" })
+    root.showRows(rows)
+  }
+
+  Timer {
+    id: pathDebounce
+    interval: 60
+    onTriggered: {
+      if (!root.opened || !root.pathRequest || root.pathQuery(root.filterText) === null) return
+      pathFolderList.generation = root.fileGeneration
+      pathFolderList.command = root.pathCommand(root.pathRequest, "d")
+      pathFolderList.running = true
+    }
+  }
+
+  // Folders first; files are only asked for once a name has been started.
+  Process {
+    id: pathFolderList
+    property int generation: -1
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (pathFolderList.generation !== root.fileGeneration || !root.opened) return
+        root.pathFolders = root.pathLines(text)
+        if (!root.pathRequest.prefix) {
+          root.showPathRows(root.pathFolders, [])
+          return
+        }
+        pathFileList.generation = root.fileGeneration
+        pathFileList.command = root.pathCommand(root.pathRequest, "f")
+        pathFileList.running = true
+      }
+    }
+  }
+
+  Process {
+    id: pathFileList
+    property int generation: -1
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (pathFileList.generation === root.fileGeneration && root.opened)
+          root.showPathRows(root.pathFolders, root.pathLines(text))
+      }
+    }
+  }
+
   // ---- selection and activation ---------------------------------------
 
   function clampSelection() {
@@ -1279,6 +1406,12 @@ Item {
     // Asking keeps the search open and shows the answer in it.
     if (kind === "ask") {
       root.startAsk(payload)
+      return
+    }
+    // In a path, Enter on a folder goes into it (Shift+Enter opens it).
+    var path = root.pathQuery(root.filterText)
+    if (kind === "file" && path && row.glyph === "▸" && !forceNew) {
+      root.setFilter(root.typedPath(payload, path) + "/")
       return
     }
     var moving = root.movingWindow
