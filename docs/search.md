@@ -15,7 +15,7 @@ together, best matches first.
 | part of a file or folder name | recent files first, then anything in your home folder |
 | a path like `/`, `~` or `~/Documents/` | the folders inside it. Start typing a name (`~/Documents/re`) to see files starting with it too, and `.` for hidden ones. **Enter** on a folder goes into it, **Shift + Enter** opens it |
 | `:` | the prefixes (`keys`, `menu`, `clip`, `ai`, `ask`, `settings`, `sp:`, `~/`); `:cl` narrows them. **Enter** types the highlighted one. With nothing typed they also show as badges under the search box; click one to type it |
-| `sp:2` | workspace 2's windows, numbered left to right, under a thumbnail of the workspace as it looks on screen. `sp:2:3` highlights the third. **Enter** (or a click on a thumbnail) goes to that window; `sp` (or `sp:`) on its own lists the workspaces that have windows |
+| `sp:2` | workspace 2's windows, numbered left to right, under a thumbnail of the workspace as it looks on screen. `sp:2:3` highlights the third. **Enter** (or a click on a thumbnail) goes to that window; `sp` (or `sp:`) on its own lists every open window with its app icon, grouped by workspace, and **Enter** opens its `sp:N:I` |
 | a sum like `12*7` or `(1+2)^3` | the answer; **Enter** copies it |
 | a number like `14` | "Go to workspace 14" |
 | anything | a **Search the web** row at the bottom, opening your browser |

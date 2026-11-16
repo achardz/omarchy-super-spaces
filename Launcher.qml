@@ -1064,13 +1064,20 @@ Item {
   function spRows(sp) {
     var rows = []
     if (!sp.ws) {
+      // Every window, with its app icon and title, grouped by workspace in
+      // the same left-to-right order sp:N numbers them. Enter opens that
+      // window's sp:N:I, the workspace thumbnail with it highlighted.
       var ids = (Hyprland.workspaces.values || []).map(function(w) { return w.id })
         .filter(function(id) { return id > 0 }).sort(function(a, b) { return a - b })
       for (var i = 0; i < ids.length; i++) {
-        var n = root.spWindows(ids[i]).length
-        if (n === 0) continue
-        rows.push({ kind: "prefix", title: "sp:" + ids[i], subtitle: n + (n === 1 ? " window" : " windows"),
-                    icon: "", glyph: "▦", tag: "Space " + ids[i], payload: "sp:" + ids[i] })
+        var list = root.spWindows(ids[i])
+        for (var k = 0; k < list.length; k++) {
+          var win = list[k]
+          var at = "sp:" + ids[i] + ":" + (k + 1)
+          rows.push({ kind: "prefix", title: root.shownText(win.title || root.shortClass(win.cls)),
+                      subtitle: root.shortClass(win.cls) + "  ·  " + at, icon: root.appIconFor(win.cls),
+                      glyph: "▦", tag: "Space " + ids[i], payload: at })
+        }
       }
       if (rows.length === 0)
         rows.push({ kind: "info", title: "No windows open", subtitle: "", icon: "", glyph: "▦", tag: "", payload: "" })
