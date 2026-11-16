@@ -1656,7 +1656,7 @@ Item {
             Column {
               anchors.left: iconBox.right
               anchors.leftMargin: Style.spacing.md
-              anchors.right: tagText.left
+              anchors.right: keyBadge.visible ? keyBadge.left : tagText.left
               anchors.rightMargin: Style.spacing.md
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(2)
@@ -1679,6 +1679,32 @@ Item {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 elide: Text.ElideMiddle
+              }
+            }
+
+            // The highlighted file or folder shows its terminal shortcut.
+            Rectangle {
+              id: keyBadge
+              visible: row.hasCursor && row.kind === "file"
+              anchors.right: tagText.left
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              width: badgeText.implicitWidth + Style.space(12)
+              height: badgeText.implicitHeight + Style.space(4)
+              radius: height / 2
+              color: "transparent"
+              border.width: 1
+              border.color: root.selectedText
+              opacity: 0.6
+
+              Text {
+                id: badgeText
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: "Alt+T  Terminal"
+                color: root.selectedText
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
               }
             }
 
