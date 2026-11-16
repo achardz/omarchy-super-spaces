@@ -35,8 +35,7 @@ Item {
 
   readonly property int duration: 260
   readonly property color backdrop: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.94)
-  // Under each window copy, so a see-through (glassy) window's thumbnail
-  // stays opaque.
+  // Under each window copy (OpaqueCopy), the last bit of a glassy window.
   readonly property color thumbBase: Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 1)
   readonly property color text: Commons.Color.foreground
   readonly property color accent: Commons.Color.accent
@@ -267,11 +266,10 @@ Item {
             visible: hover.containsMouse && ov.spread
           }
 
-          // A see-through (glassy) window would show the backdrop through
-          // its copy; a solid base keeps each thumbnail opaque.
-          Rectangle { anchors.fill: parent; color: ov.thumbBase }
-          ScreencopyView {
+          // Opaque even for a see-through (glassy) window.
+          OpaqueCopy {
             anchors.fill: parent
+            base: ov.thumbBase
             captureSource: thumb.modelData.toplevel.wayland
             live: true
           }
@@ -346,19 +344,16 @@ Item {
 
               Repeater {
                 model: cell.modelData.windows
-                delegate: Item {
+                delegate: OpaqueCopy {
                   required property var modelData
                   x: modelData.x * stage2.scale
                   y: modelData.y * stage2.scale
                   width: modelData.w * stage2.scale
                   height: modelData.h * stage2.scale
-                  Rectangle { anchors.fill: parent; color: ov.thumbBase }
-                  ScreencopyView {
-                    anchors.fill: parent
-                    captureSource: parent.modelData.toplevel.wayland
-                    // Windows on hidden workspaces don't change: one copy.
-                    live: parent.modelData.ws === ov.activeWs
-                  }
+                  base: ov.thumbBase
+                  captureSource: modelData.toplevel.wayland
+                  // Windows on hidden workspaces don't change: one copy.
+                  live: modelData.ws === ov.activeWs
                 }
               }
 

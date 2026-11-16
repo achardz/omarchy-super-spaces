@@ -1921,10 +1921,10 @@ Item {
                 height: modelData.h * spBox.s
                 z: modelData.floating ? 1 : 0
 
-                // Solid base, so a see-through (glassy) window's copy stays opaque.
-                Rectangle { anchors.fill: parent; color: Qt.rgba(root.background.r, root.background.g, root.background.b, 1) }
-                ScreencopyView {
+                // Opaque even for a see-through (glassy) window.
+                OpaqueCopy {
                   anchors.fill: parent
+                  base: Qt.rgba(root.background.r, root.background.g, root.background.b, 1)
                   captureSource: spThumb.modelData.toplevel.wayland
                   live: spBox.p.live
                 }
